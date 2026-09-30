@@ -265,6 +265,13 @@ assert set(Image.open(io.BytesIO(photo_png)).convert("L").tobytes()) <= {0, 255}
 assert web.edits({"brightness": "99", "contrast": "0"}) == {"brightness": 3.0, "contrast": 0.2}
 assert agent.STOPS[0] == ("Oslo S", "rail") if "WEATHERBOY_STOPS" not in os.environ else True
 
+# daily art: from its time until quiet hours, once a day
+from datetime import datetime as dt
+assert not web.art_due(dt(2026, 9, 30, 11, 59), "12:00", None)
+assert web.art_due(dt(2026, 9, 30, 12, 0), "12:00", None) and web.art_due(dt(2026, 9, 30, 17, 30), "12:00", "2026-09-29")
+assert not web.art_due(dt(2026, 9, 30, 17, 30), "12:00", "2026-09-30")  # already printed today
+assert not web.art_due(dt(2026, 9, 30, 22, 0), "12:00", None) and not web.art_due(dt(2026, 9, 30, 13, 0), "", None)
+
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"
 assert speak.lang_of("It will be twelve degrees and light rain.") == "en"

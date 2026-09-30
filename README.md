@@ -73,7 +73,7 @@ flowchart LR
     PV["Preview: the exact dots<br/>the printer would fire"] -->|"Skriv ut"| P[printer]
 ```
 
-The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut". Photos are rotated upright and Atkinson-dithered to 576 dots. There's no login, so anyone on the network can print.
+The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut", except **dagens kunst**: with a printer configured, the server prints the day's maze at 12:00 (`WEATHERBOY_ART_AT`, empty turns it off). If the printer is off or out of paper it keeps trying every minute until 22:00, and it never prints the same day twice. Photos are rotated upright and Atkinson-dithered to 576 dots. There's no login, so anyone on the network can print.
 
 **Phones can't connect?** On Windows the firewall blocks it. Allowing "python.exe" doesn't last, because uv's Python lives in versioned folders. Allow the port instead, once, in an administrator PowerShell:
 

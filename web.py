@@ -10,8 +10,10 @@ import io
 import json
 import socket
 import sys
+import os
 import threading
-from datetime import date
+import time
+from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -249,12 +251,48 @@ def banner():
     return f"{art}web page: {URL}  (Windows: allow python through the firewall so phones can reach it)"
 
 
+ART_AT = os.environ.get("WEATHERBOY_ART_AT", "12:00")  # daily art print; empty turns it off
+ART_DONE = Path(__file__).with_name("data") / "dagens_kunst.json"
+QUIET_FROM = (22, 0)  # no scheduled prints after this; pos_printer.md's quiet hours start 22:30
+
+
+def art_due(now, at, done):
+    """Print today's art? From `at` until quiet hours, unless it's already on paper today."""
+    if not at or done == now.date().isoformat():
+        return False
+    hh, mm = map(int, at.split(":"))
+    return (hh, mm) <= (now.hour, now.minute) < QUIET_FROM
+
+
+def daily_art(at):
+    """Every minute: if the day's art is due, print it. A printer that's off, busy or out of paper just means
+    trying again next minute, until quiet hours; the date it went out is kept across restarts."""
+    waiting = None
+    while True:
+        now = datetime.now()
+        done = json.loads(ART_DONE.read_text(encoding="utf-8"))["date"] if ART_DONE.exists() else None
+        if PRINTER and art_due(now, at, done):
+            try:
+                render(CARDS["art"](), True)
+                ART_DONE.parent.mkdir(exist_ok=True)
+                ART_DONE.write_text(json.dumps({"date": now.date().isoformat()}), encoding="utf-8")
+                print(f"dagens kunst printed {now:%H:%M}")
+            except (OSError, printer.PrinterError) as e:
+                if waiting != now.date():  # say it once a day, not every minute
+                    print(f"dagens kunst: waiting for the printer ({e})")
+                    waiting = now.date()
+        time.sleep(60)
+
+
 def start(port=PORT, printer_ip=None):
-    """Serve in a background thread on all interfaces, so phones on the WiFi can reach it."""
+    """Serve in a background thread on all interfaces, so phones on the WiFi can reach it. With a printer,
+    also runs the daily art print."""
     global PRINTER, URL
     PRINTER, URL = printer_ip, f"http://{lan_ip()}:{port}"
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    if printer_ip and ART_AT:
+        threading.Thread(target=daily_art, args=(ART_AT,), daemon=True).start()
     return server
 
 
