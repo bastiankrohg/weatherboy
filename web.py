@@ -8,6 +8,7 @@ ponytail: no login. Anyone on the LAN can print and spend API credit. Add a shar
 """
 import io
 import json
+import os
 import socket
 import sys
 import threading
@@ -22,6 +23,7 @@ from PIL import Image, ImageEnhance, ImageOps
 import agent
 import cookbook
 import daily
+import home
 import layout
 import presets
 import printer
@@ -32,7 +34,11 @@ PORT = 8615
 MAX_UPLOAD = 25_000_000  # bytes; a big phone photo is ~10 MB
 PAGE = Path(__file__).with_name("web.html")
 PRINTER = None           # printer IP, set by start(); None = previews only
-URL = f"http://127.0.0.1:{PORT}"  # this page's LAN address, set by start()
+URL = f"http://127.0.0.1:{PORT}"  # this page's address for the QR code, set by start()
+PUBLIC_URL = os.environ.get("WEATHERBOY_PUBLIC_URL", "")  # the tunnel's address, e.g. https://weatherboy.example.no
+AWAY = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>Weatherboy</title><body style='font:18px system-ui;margin:3em 1.5em;max-width:30em'>"
+        "<h1>Weatherboy er hjemme</h1><p>Siden virker bare fra WiFi-en hjemme. Koble til den, og last inn på nytt.</p>")
 
 
 def lan_ip():
@@ -132,7 +138,19 @@ class Handler(BaseHTTPRequestHandler):
     def json(self, obj, code=200):
         self.reply(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 
+    def home_only(self):
+        """Visits through the tunnel carry Cloudflare's CF-Connecting-IP: only the flat's own address gets in.
+        Without it, the request came straight from the local network (as before the tunnel). Nobody can leave
+        the header out from outside: the only way in from the internet is through Cloudflare, which sets it."""
+        visitor = self.headers.get("CF-Connecting-IP")
+        if visitor is None or home.allowed(visitor):
+            return True
+        self.reply(403, AWAY.encode(), "text/html; charset=utf-8")
+        return False
+
     def do_GET(self):
+        if not self.home_only():
+            return
         try:
             self._get(urlparse(self.path).path)
         except Exception as e:  # e.g. an unknown recipe name: tell the page instead of dropping the connection
@@ -182,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, render(img, q.get("print") == "1", **edits(q), dither=dither), "image/png")
 
     def do_POST(self):
+        if not self.home_only():
+            return
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         n = int(self.headers.get("Content-Length") or 0)
@@ -288,7 +308,7 @@ def start(port=PORT, printer_ip=None):
     """Serve in a background thread on all interfaces, so phones on the WiFi can reach it. With a printer,
     also runs the daily prints (art, word of the day), switched on and off from the page."""
     global PRINTER, URL
-    PRINTER, URL = printer_ip, f"http://{lan_ip()}:{port}"
+    PRINTER, URL = printer_ip, PUBLIC_URL or f"http://{lan_ip()}:{port}"
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if printer_ip:

@@ -251,6 +251,22 @@ urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv.server_por
 assert {"4 egg", "syltetøy"} <= {it["text"] for it in shoplist.items()}
 _, short = call("/api/text", json.dumps({"kind": "short", "a": pk}).encode(), "application/json")
 assert short.width == 576 and short.height < layout.recipe(pk).height * 0.7
+# the tunnel: visitors reported by Cloudflare get in only from the flat's own address; the LAN as before
+import home, ipaddress, time as _time
+home._home.update(v4=ipaddress.ip_address("84.214.212.9"), v6=ipaddress.ip_network("2a02:fe0:c43e:4600::/56"),
+                  at=_time.time())
+assert home.allowed("84.214.212.9") and home.allowed("2a02:fe0:c43e:4601::abcd")
+assert not home.allowed("8.8.8.8") and not home.allowed("2a02:fe0:c43e:4700::1") and not home.allowed("junk")
+def visit(ip):
+    try:
+        return urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/url",
+                                                             headers={"CF-Connecting-IP": ip})).status
+    except urllib.error.HTTPError as e:
+        return e.code
+assert visit("84.214.212.9") == 200 and visit("203.0.113.7") == 403
+home._home.update(v4=None, v6=None)  # home address unknown: tunnel visitors are refused, not waved through
+assert visit("84.214.212.9") == 403 and get("/api/url")  # ...while the local network still works
+home._home.update(at=0.0)
 landscape = io.BytesIO()
 raw.rotate(90, expand=True).save(landscape, "PNG")
 _, back = call("/api/image?dither=1", landscape.getvalue(), "image/png")
