@@ -88,6 +88,8 @@ New-NetFirewallRule -DisplayName "Weatherboy web page (TCP 8615, local network)"
 
 It only admits devices on your own network. A Pi or Mac needs nothing.
 
+**Still timing out?** Then the phone's requests never arrive, and the router is keeping WiFi devices apart: turn off "client isolation" / "AP isolation" in its WiFi settings (http://192.168.0.1 on Telia routers). A server on a cable (like the printer, or a Pi) is usually reachable even with isolation on.
+
 ## Recipes
 
 Your recipes live in their own git repo, `recipes/` (git-ignored here), or wherever `WEATHERBOY_RECIPES` points. One Markdown file per dish, in the format in [recipes/README.md](recipes/README.md).
