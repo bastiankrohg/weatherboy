@@ -9,8 +9,8 @@ from playwright.sync_api import sync_playwright
 
 import web
 
-server = web.start(8699, None)
-B = "http://127.0.0.1:8699"
+server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place
+B = f"http://127.0.0.1:{server.server_address[1]}"
 OUT = "out/"
 os.makedirs(OUT, exist_ok=True)
 
