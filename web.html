@@ -74,6 +74,12 @@
   .qr img { width: 96px; height: 96px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
   .qr a { color: var(--ink); word-break: break-all; }
   .stops, .presets, .wish { margin-top: 8px; }
+  .daily { align-items: center; margin-bottom: 8px; }
+  .switch, .time { display: flex; gap: 6px; align-items: center; font-size: 15px; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--accent); }
+  input[type=time] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+                     border-radius: 8px; padding: 5px 8px; }
+  #d-status { margin: 0 0 0 auto; }
   .presets:empty { display: none; }
   .preset { display: inline-flex; }
   .preset button:first-child { border-radius: 8px 0 0 8px; }
@@ -139,6 +145,21 @@
         <button>Ønsk</button>
       </form>
       <p class="msg" id="wishmsg"></p>
+    </div>
+
+    <div class="card">
+      <h2>Daglig utskrift</h2>
+      <div class="row daily">
+        <label class="switch"><input type="checkbox" id="d-art"> Dagens kunst</label>
+        <label class="switch"><input type="checkbox" id="d-word"> Dagens ord</label>
+        <select id="d-lang" aria-label="Språk for dagens ord"></select>
+        <label class="time">kl. <input type="time" id="d-time" step="60"></label>
+      </div>
+      <div class="row daily">
+        <button id="d-preview">Vis dagens ord</button>
+        <button id="d-off">Stopp alt</button>
+        <span class="msg" id="d-status"></span>
+      </div>
     </div>
 
     <div class="card">
@@ -700,7 +721,31 @@ $("#shopprint").onclick = () => {
   preview("/api/text", JSON.stringify({ kind: "shopping", a, ids }), "application/json", { a, kind: "shopping", ids });
 };
 
+// Daily prints: art and word of the day at a set time; each switch saves at once
+async function daily(changes) {
+  const r = changes
+    ? await fetch("/api/daily", { method: "POST", body: JSON.stringify(changes), headers: { "Content-Type": "application/json" } })
+    : await fetch("/api/daily");
+  const d = await r.json();
+  if (!r.ok) return say(d.error, true);
+  const s = d.settings, today = new Date().toLocaleDateString("sv");  // YYYY-MM-DD, local
+  if (d.langs && !$("#d-lang").options.length)
+    for (const l of d.langs) $("#d-lang").append(Object.assign(document.createElement("option"), { value: l.id, textContent: l.name }));
+  $("#d-art").checked = s.art; $("#d-word").checked = s.word; $("#d-lang").value = s.lang; $("#d-time").value = s.time;
+  const jobs = [s.art && "kunst", s.word && "ord"].filter(Boolean);
+  const printed = ["art", "word"].filter(j => s[j] && d.done[j] === today).length === jobs.length && jobs.length;
+  $("#d-status").textContent = !jobs.length ? "Av." : printed ? `Skrevet ut i dag. Neste: i morgen kl. ${s.time}.`
+                                                     : `Skriver ut ${jobs.join(" og ")} kl. ${s.time}.`;
+}
+$("#d-art").onchange = () => daily({ art: $("#d-art").checked });
+$("#d-word").onchange = () => daily({ word: $("#d-word").checked });
+$("#d-lang").onchange = () => daily({ lang: $("#d-lang").value });
+$("#d-time").onchange = () => $("#d-time").value && daily({ time: $("#d-time").value });
+$("#d-off").onclick = () => daily({ art: false, word: false });
+$("#d-preview").onclick = () => preview("/api/card/word?lang=" + $("#d-lang").value);
+
 refreshStatus(); setInterval(() => { refreshStatus(); loadShop(); }, 10000);
+daily();
 loadShop();
 loadPresets();
 loadModels();

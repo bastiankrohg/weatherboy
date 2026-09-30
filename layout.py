@@ -3,6 +3,7 @@ import math
 import random
 import re
 from datetime import datetime
+from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -12,11 +13,22 @@ M = 32                # 4 mm side margins
 COL = DOTS - 2 * M    # 512-dot text column
 MAX_H = 4800          # ~60 cm. ponytail: hard paper guard; long answers get cut, not printed forever
 
-SANS = ["DejaVuSans.ttf", "arial.ttf", "Arial.ttf", "Helvetica.ttc"]
-BOLD = ["DejaVuSans-Bold.ttf", "arialbd.ttf", "Arial Bold.ttf", "Helvetica.ttc"]
-MONO = ["DejaVuSansMono.ttf", "consola.ttf", "Menlo.ttc", "Courier New.ttf"]
+SANS = ("DejaVuSans.ttf", "arial.ttf", "Arial.ttf", "Helvetica.ttc")
+BOLD = ("DejaVuSans-Bold.ttf", "arialbd.ttf", "Arial Bold.ttf", "Helvetica.ttc")
+MONO = ("DejaVuSansMono.ttf", "consola.ttf", "Menlo.ttc", "Courier New.ttf")
+# Faces with Hangul / Chinese / Japanese: Noto CJK on a Pi (fonts-noto-cjk), else what Windows or macOS ship
+KOREAN = ("NotoSansCJK-Regular.ttc", "malgun.ttf", "AppleSDGothicNeo.ttc")
+CHINESE = ("NotoSansCJK-Regular.ttc", "msyh.ttc", "PingFang.ttc", "Hiragino Sans GB.ttc")
+JAPANESE = ("NotoSansCJK-Regular.ttc", "YuGothM.ttc", "meiryo.ttc", "Hiragino Sans GB.ttc", "msyh.ttc")
+KOREAN_BOLD = ("NotoSansCJK-Bold.ttc", "malgunbd.ttf", "AppleSDGothicNeo.ttc")
+CHINESE_BOLD = ("NotoSansCJK-Bold.ttc", "msyhbd.ttc", "PingFang.ttc", "Hiragino Sans GB.ttc")
+JAPANESE_BOLD = ("NotoSansCJK-Bold.ttc", "YuGothB.ttc", "meiryob.ttc", "Hiragino Sans GB.ttc", "msyhbd.ttc")
+HANGUL = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
+KANA = re.compile(r"[\u3040-\u30ff]")
+HAN = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 
 
+@lru_cache(maxsize=None)
 def font(names, size):
     for n in names:  # PIL searches the OS font dirs for bare names on Windows, macOS and Linux
         try:
@@ -24,6 +36,17 @@ def font(names, size):
         except OSError:
             pass
     return ImageFont.load_default(size)
+
+
+def pick(f, text):
+    """PIL has no font fallback: text with Hangul, kana or Chinese characters gets a face that has them,
+    in the same weight. One face per call, so a line mixing scripts takes the first that matches."""
+    bold = f is font(BOLD, int(f.size))  # fonts are cached, so the bold face is always the same object
+    for script, faces, bold_faces in ((HANGUL, KOREAN, KOREAN_BOLD), (KANA, JAPANESE, JAPANESE_BOLD),
+                                      (HAN, CHINESE, CHINESE_BOLD)):
+        if script.search(text):
+            return font(bold_faces if bold else faces, int(f.size))
+    return f
 
 
 def wrap(text, f, width=COL):
@@ -86,8 +109,9 @@ def answer(question, text, when=None, icon=None):
     small, body, sub, head = font(SANS, 20), font(SANS, 28), font(BOLD, 28), font(BOLD, 40)
     img, d = _canvas()
     y = _header(d, when, icon=icon)
-    for line in wrap(question, small):
-        d.text((M, y), line, font=small, fill=0)
+    qf = pick(small, question)
+    for line in wrap(question, qf):
+        d.text((M, y), line, font=qf, fill=0)
         y += 26
     y += 34
 
@@ -106,26 +130,27 @@ def answer(question, text, when=None, icon=None):
         else:
             for para in block.strip("\n").split("\n"):
                 item = re.match(r"(\d+\.|[-*])\s+(.*)", para)
+                fb, fs, fh = pick(body, para), pick(sub, para), pick(head, para)  # Korean, Chinese, Japanese
                 if para.startswith("# "):
-                    for line in wrap(para[2:], head):
-                        d.text((M, y), line, font=head, fill=0)
+                    for line in wrap(para[2:], fh):
+                        d.text((M, y), line, font=fh, fill=0)
                         y += 48
                     y += 10
                 elif para.startswith("## "):
                     y += 17
-                    for line in wrap(para[3:], sub):
-                        d.text((M, y), line, font=sub, fill=0)
+                    for line in wrap(para[3:], fs):
+                        d.text((M, y), line, font=fs, fill=0)
                         y += 34
                 elif item:  # bullets and numbered steps with a hanging indent
                     d.text((M, y), "•" if item[1] in "-*" else item[1], font=body, fill=0)
-                    for line in wrap(item[2], body, COL - 40):
-                        d.text((M + 40, y), line, font=body, fill=0)
+                    for line in wrap(item[2], fb, COL - 40):
+                        d.text((M + 40, y), line, font=fb, fill=0)
                         y += 34
                 elif not para.strip():
                     y += 17
                 else:
-                    for line in wrap(para, body):
-                        d.text((M, y), line, font=body, fill=0)
+                    for line in wrap(para, fb):
+                        d.text((M, y), line, font=fb, fill=0)
                         y += 34
         art = not art
     return img.crop((0, 0, DOTS, min(y + 8, MAX_H)))
@@ -497,9 +522,16 @@ def shopping(d, x, y):  # a carrier bag
     d.arc((x + 14, y + 1, x + 30, y + 19), 180, 360, fill=0, width=3)
 
 
+def language(d, x, y):  # a speech bubble with two lines of text
+    d.rounded_rectangle((x + 2, y + 1, x + 42, y + 24), radius=6, outline=0, width=3)
+    d.polygon([(x + 10, y + 23), (x + 10, y + 32), (x + 19, y + 23)], fill=0)
+    d.line((x + 10, y + 9, x + 34, y + 9), fill=0, width=3)
+    d.line((x + 10, y + 16, x + 26, y + 16), fill=0, width=3)
+
+
 ICONS = {"question": question, "cooking": cooking, "cocktail": cocktail, "weather": weather_icon,
          "transport": transport, "flight": flight, "music": music, "idea": idea, "photo": camera,
-         "shopping": shopping}
+         "shopping": shopping, "language": language}
 
 
 def photo(picture, when=None):
@@ -513,6 +545,44 @@ def photo(picture, when=None):
     d.text((DOTS - M - small.getlength(stamp), 30), stamp, font=small, fill=0)
     img.paste(picture, (0, 72))
     return img.crop((0, 0, DOTS, min(72 + picture.height + 8, MAX_H)))
+
+
+def word(e, label, when=None):
+    """Word or character of the day. e: word, reading, kind, meaning, example, example_reading,
+    example_meaning, note (see words.py). The word as large as fits, in a face for its script."""
+    small, mid = font(SANS, 20), font(SANS, 26)
+    img, d = _canvas()
+    y = _header(d, when, icon="language")
+    d.text((M, y), label, font=small, fill=0)
+    y += 40
+    big = next(f for size in (150, 130, 110, 96, 84, 72, 60, 48, 40)  # a single character gets the most room
+               if (f := pick(font(BOLD, size), e["word"])).getlength(e["word"]) <= COL)
+    top = big.getbbox(e["word"])[1]
+    d.text((DOTS / 2, y - top), e["word"], font=big, fill=0, anchor="ma")  # ink top exactly at y
+    y += big.getbbox(e["word"])[3] - top + 18
+    for text, f in ((e.get("reading", ""), mid), (e.get("kind", ""), small)):
+        if text:
+            f = pick(f, text)
+            d.text((DOTS / 2, y), text, font=f, fill=0, anchor="mt")
+            y += int(f.size) + 10
+    y += 14
+    f = pick(font(BOLD, 30), e["meaning"])
+    for line in wrap(e["meaning"], f):
+        d.text((DOTS / 2, y), line, font=f, fill=0, anchor="mt")
+        y += 38
+    y += 26
+    for text, size, bold in ((e.get("example", ""), 28, False), (e.get("example_reading", ""), 20, False),
+                             (e.get("example_meaning", ""), 24, False), (e.get("note", ""), 20, False)):
+        if not text:
+            continue
+        f = pick(font(BOLD if bold else SANS, size), text)
+        if text is e.get("note"):
+            y += 16
+        for line in wrap(text, f):
+            d.text((M, y), line, font=f, fill=0)
+            y += size + 8
+        y += 4
+    return img.crop((0, 0, DOTS, min(y + 16, MAX_H)))
 
 
 def qr(url, when=None):

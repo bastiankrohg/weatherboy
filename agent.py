@@ -200,13 +200,13 @@ model = os.environ.get("WEATHERBOY_MODEL", "claude-haiku-4-5")
 spent = 0.0  # estimated $ since start; the real balance is on console.anthropic.com
 
 
-def params(m):
+def params(m, effort="low"):
     """Per-model request settings: each is as cheap as that model allows."""
     if m == "claude-haiku-4-5":  # no thinking at all; Haiku takes no effort setting and the pre-2026 web tools
         return {"max_tokens": 4000, "tools": TOOLS + [
             {"type": "web_search_20250305", "name": "web_search", **WEB_LIMITS["search"]},
             {"type": "web_fetch_20250910", "name": "web_fetch", **WEB_LIMITS["fetch"]}]}
-    return {"max_tokens": 8000, "output_config": {"effort": "low"},  # thinking can't be off on these; low = least
+    return {"max_tokens": 8000, "output_config": {"effort": effort},  # thinking can't be off on these; low = least
             "betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default", "tools": TOOLS + [
                 {"type": "web_search_20260209", "name": "web_search", **WEB_LIMITS["search"]},
                 {"type": "web_fetch_20260209", "name": "web_fetch", **WEB_LIMITS["fetch"]}]}
@@ -252,15 +252,17 @@ def _ask(question, voice):
     return _run(VOICE if voice else PAPER, history)
 
 
-def _run(system, messages, extra_tools=()):
-    """The tool loop. Appends the conversation to `messages`; -> (final text, estimated $)."""
+def _run(system, messages, extra_tools=(), use=None, effort="low"):
+    """The tool loop. Appends the conversation to `messages`; -> (final text, estimated $).
+    use: a model other than the one picked on the page (preset design uses a stronger one)."""
     global spent
-    p = params(model)
+    m = use or model
+    p = params(m, effort)
     p["tools"] = p["tools"] + list(extra_tools)
     dollars = 0.0
     for _ in range(5):  # the runner doesn't resume pause_turn (long server-tool turns); restart it
         runner = client.beta.messages.tool_runner(
-            model=model, system=system, messages=list(messages),
+            model=m, system=system, messages=list(messages),
             cache_control={"type": "ephemeral"},  # tool-loop turns re-send everything; cached reads cost 10%
             **p)
         msg = None
@@ -287,13 +289,17 @@ or every press comes out alike. If it can't be done with those tools, create not
 Norwegian, why."""
 
 
+PRESET_MODEL = "claude-sonnet-5-5"  # a preset is used many times, so it's worth a better designer than chat
+
+
 def design_preset(request):
     """A wish from the page -> maybe a new preset button. -> (reply text, the preset or None, estimated $)."""
     if not (client.api_key or client.auth_token):
         raise RuntimeError("Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py, og start på nytt.")
     with _lock:
         presets.last = None
-        reply, dollars = _run(PRESET, [{"role": "user", "content": request}], [beta_tool(presets.create_preset)])
+        reply, dollars = _run(PRESET, [{"role": "user", "content": request}], [beta_tool(presets.create_preset)],
+                              use=PRESET_MODEL, effort="medium")
         return reply, presets.last, dollars
 
 

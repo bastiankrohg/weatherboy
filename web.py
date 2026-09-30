@@ -10,10 +10,8 @@ import io
 import json
 import socket
 import sys
-import os
 import threading
-import time
-from datetime import date, datetime
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -23,10 +21,12 @@ from PIL import Image, ImageEnhance, ImageOps
 
 import agent
 import cookbook
+import daily
 import layout
 import presets
 import printer
 import shoplist
+import words
 
 PORT = 8615
 MAX_UPLOAD = 25_000_000  # bytes; a big phone photo is ~10 MB
@@ -161,6 +161,9 @@ class Handler(BaseHTTPRequestHandler):
             self.json(shoplist.items())
         elif path == "/api/presets":
             self.json(presets.items())
+        elif path == "/api/daily":
+            self.json({"settings": daily.settings(), "done": daily.done(),
+                       "langs": [{"id": k, "name": v[0]} for k, v in words.LANGS.items()]})
         elif path == "/api/stops":
             self.json([{"name": n, "mode": m} for n, m in agent.STOPS])
         elif path == "/api/models":
@@ -194,6 +197,11 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/wish":  # "ønsk deg en kvittering": Claude designs a preset, if it can
                 reply, preset, dollars = agent.design_preset(json.loads(body)["text"])
                 self.json({"reply": reply, "preset": preset, "cost": dollars, "spent": agent.spent})
+            elif url.path == "/api/daily":  # switch the daily prints on/off, pick the language or the time
+                daily.update(json.loads(body))
+                self.json({"settings": daily.settings(), "done": daily.done()})
+            elif url.path == "/api/card/word":  # ?lang=ko: today's word, cached, so previews are free
+                self.receipt(word_card(q.get("lang") or daily.settings()["lang"]), q)
             elif url.path == "/api/presets":
                 presets.remove(json.loads(body)["remove"])
                 self.json(presets.items())
@@ -267,48 +275,24 @@ def banner():
     return f"{art}web page: {URL}  (Windows: allow python through the firewall so phones can reach it)"
 
 
-ART_AT = os.environ.get("WEATHERBOY_ART_AT", "12:00")  # daily art print; empty turns it off
-ART_DONE = Path(__file__).with_name("data") / "dagens_kunst.json"
-QUIET_FROM = (22, 0)  # no scheduled prints after this; pos_printer.md's quiet hours start 22:30
+def daily_job(job, settings):
+    """What daily.run prints: the day's art, or the word of the day in the chosen language."""
+    render(CARDS["art"]() if job == "art" else word_card(settings["lang"]), True)
 
 
-def art_due(now, at, done):
-    """Print today's art? From `at` until quiet hours, unless it's already on paper today."""
-    if not at or done == now.date().isoformat():
-        return False
-    hh, mm = map(int, at.split(":"))
-    return (hh, mm) <= (now.hour, now.minute) < QUIET_FROM
-
-
-def daily_art(at):
-    """Every minute: if the day's art is due, print it. A printer that's off, busy or out of paper just means
-    trying again next minute, until quiet hours; the date it went out is kept across restarts."""
-    waiting = None
-    while True:
-        now = datetime.now()
-        done = json.loads(ART_DONE.read_text(encoding="utf-8"))["date"] if ART_DONE.exists() else None
-        if PRINTER and art_due(now, at, done):
-            try:
-                render(CARDS["art"](), True)
-                ART_DONE.parent.mkdir(exist_ok=True)
-                ART_DONE.write_text(json.dumps({"date": now.date().isoformat()}), encoding="utf-8")
-                print(f"dagens kunst printed {now:%H:%M}")
-            except (OSError, printer.PrinterError) as e:
-                if waiting != now.date():  # say it once a day, not every minute
-                    print(f"dagens kunst: waiting for the printer ({e})")
-                    waiting = now.date()
-        time.sleep(60)
+def word_card(lang):
+    return layout.word(words.today(lang), words.label(lang))
 
 
 def start(port=PORT, printer_ip=None):
     """Serve in a background thread on all interfaces, so phones on the WiFi can reach it. With a printer,
-    also runs the daily art print."""
+    also runs the daily prints (art, word of the day), switched on and off from the page."""
     global PRINTER, URL
     PRINTER, URL = printer_ip, f"http://{lan_ip()}:{port}"
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    if printer_ip and ART_AT:
-        threading.Thread(target=daily_art, args=(ART_AT,), daemon=True).start()
+    if printer_ip:
+        threading.Thread(target=daily.run, args=(daily_job,), daemon=True).start()
     return server
 
 

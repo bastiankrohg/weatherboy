@@ -177,6 +177,7 @@ assert agent.model == os.environ.get("WEATHERBOY_MODEL", "claude-haiku-4-5")
 hk, op = agent.params("claude-haiku-4-5"), agent.params("claude-opus-5-5")
 assert "output_config" not in hk and "thinking" not in hk and "fallbacks" not in hk
 assert {t["type"] for t in hk["tools"] if isinstance(t, dict)} == {"web_search_20250305", "web_fetch_20250910"}
+assert agent.params("claude-sonnet-5-5", "medium")["output_config"] == {"effort": "medium"}
 assert op["output_config"] == {"effort": "low"} and {t["type"] for t in op["tools"] if isinstance(t, dict)} == {
     "web_search_20260209", "web_fetch_20260209"}
 u = NS(input_tokens=1_000_000, output_tokens=100_000, cache_creation_input_tokens=0, cache_read_input_tokens=1_000_000,
@@ -283,12 +284,42 @@ try:
 except ValueError:
     pass
 
-# daily art: from its time until quiet hours, once a day
+# daily prints: due from their time until quiet hours, once a day; settings validated
+import daily
 from datetime import datetime as dt
-assert not web.art_due(dt(2026, 9, 30, 11, 59), "12:00", None)
-assert web.art_due(dt(2026, 9, 30, 12, 0), "12:00", None) and web.art_due(dt(2026, 9, 30, 17, 30), "12:00", "2026-09-29")
-assert not web.art_due(dt(2026, 9, 30, 17, 30), "12:00", "2026-09-30")  # already printed today
-assert not web.art_due(dt(2026, 9, 30, 22, 0), "12:00", None) and not web.art_due(dt(2026, 9, 30, 13, 0), "", None)
+assert not daily.due(dt(2026, 9, 30, 11, 59), "12:00", None)
+assert daily.due(dt(2026, 9, 30, 12, 0), "12:00", None) and daily.due(dt(2026, 9, 30, 17, 30), "12:00", "2026-09-29")
+assert not daily.due(dt(2026, 9, 30, 17, 30), "12:00", "2026-09-30")  # already printed today
+assert not daily.due(dt(2026, 9, 30, 22, 0), "12:00", None)
+daily.DATA = Path(tempfile.mkdtemp())
+daily.SETTINGS, daily.DONE = daily.DATA / "daglig.json", daily.DATA / "daglig_utskrevet.json"
+assert daily.settings()["lang"] == "ko" and daily.update({"lang": "fr", "word": False})["lang"] == "fr"
+assert daily.settings() == {**daily.DEFAULTS, "lang": "fr", "word": False}
+for bad in ({"lang": "xx"}, {"time": "25:00"}, {"rm": "-rf"}):
+    try:
+        daily.update(bad)
+        raise AssertionError(bad)
+    except ValueError:
+        pass
+(daily.DATA / "dagens_kunst.json").write_text('{"date": "2026-09-30"}')  # the old art-only record carries over
+assert daily.done() == {"art": "2026-09-30"}
+
+# word of the day: cached per language and day, remembers what it gave
+import words
+from datetime import date as _date
+words.FILE = Path(tempfile.mkdtemp()) / "dagens_ord.json"
+calls = []
+words.generate = lambda lang, seen: calls.append(seen) or {
+    "word": f"ord{len(calls)}", "reading": "", "kind": "noun", "meaning": "word", "example": "x",
+    "example_reading": "", "example_meaning": "x", "note": ""}
+assert words.today("ko")["word"] == "ord1" and words.today("ko")["word"] == "ord1" and len(calls) == 1
+words.today("fr")
+data = json.loads(words.FILE.read_text(encoding="utf-8"))
+data["today"]["ko"]["date"] = "2000-01-01"  # yesterday's word: a new one, and the old one is remembered
+words.FILE.write_text(json.dumps(data), encoding="utf-8")
+assert words.today("ko")["word"] == "ord3" and calls[-1] == ["ord1"]
+assert layout.word(words.today("ko"), words.label("ko")).width == 576
+assert "Dagens tegn" in words.label("ja") and "Dagens ord" in words.label("ko")
 
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"

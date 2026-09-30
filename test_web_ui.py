@@ -7,14 +7,22 @@ import os
 
 from playwright.sync_api import sync_playwright
 
+import daily
 import presets
 import shoplist
+import words
 import tempfile
 import web
 from pathlib import Path
 
 shoplist.FILE = Path(tempfile.mkdtemp()) / "handleliste.json"  # never the flat's real list
 presets.FILE = Path(tempfile.mkdtemp()) / "presets.json"  # nor its real buttons
+daily.DATA = Path(tempfile.mkdtemp())  # nor the daily settings; and no Claude calls for the word
+daily.SETTINGS, daily.DONE = daily.DATA / "daglig.json", daily.DATA / "daglig_utskrevet.json"
+words.FILE = daily.DATA / "dagens_ord.json"
+words.generate = lambda lang, seen: {"word": "산책", "reading": "sanchaek", "kind": "noun", "meaning": "a walk",
+                                     "example": "산책해요.", "example_reading": "sanchaekaeyo.",
+                                     "example_meaning": "I take a walk.", "note": ""}
 presets.create_preset("Dagens ord", "Gi meg et sjeldent norsk ord.", "idea")
 server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place
 B = f"http://127.0.0.1:{server.server_address[1]}"
@@ -123,6 +131,17 @@ with sync_playwright() as p:
     page.wait_for_function("() => !document.querySelector('.preset')")
     preset_ok = preset_label == "Dagens ord" and presets.items() == []
 
+    # daily prints: switches save at once, "Stopp alt" turns both off, the word previews
+    page.wait_for_function("() => document.querySelector('#d-lang').options.length > 5")
+    page.select_option("#d-lang", "ja")
+    page.wait_for_function("() => document.querySelector('#d-status').textContent.length > 0")
+    page.click("#d-off")
+    page.wait_for_function("() => document.querySelector('#d-status').textContent === 'Av.'")
+    daily_ok = daily.settings()["lang"] == "ja" and not daily.settings()["art"] and not daily.settings()["word"]
+    page.select_option("#d-lang", "ko")
+    page.click("#d-preview")
+    page.wait_for_function("() => current && current.path.startsWith('/api/card/word') && document.querySelector('#paper img')")
+
     # blank sheet
     page.click("#blank")
     blank = page.eval_on_selector("#canvas", "c => [c.width, c.height]")
@@ -138,5 +157,5 @@ assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/a
 print("short card", short_h, "px high | ingredients added", ingredients_added)
 assert short_h < full_h * 0.7 and ingredients_added >= 3
 print("filter", tag, "->", shown, "of", total)
-assert tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and not errors
+assert tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and not errors
 print("editor ok")
