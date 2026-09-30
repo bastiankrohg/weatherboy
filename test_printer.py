@@ -192,11 +192,25 @@ try:
 except ValueError:
     pass
 
-# cropping: start and cut lines keep only those rows; out-of-range values are clamped
-tall = layout.maze(date(2026, 9, 30), t0)
-cut = Image.open(io.BytesIO(web.render(tall, False, 100, 300)))
-assert cut.size == (576, 200) and cut.tobytes() == tall.crop((0, 100, 576, 300)).convert("1").convert("L").tobytes()
-assert Image.open(io.BytesIO(web.render(tall, False, -5, 99999))).height == tall.height
+# the editor's round trip, through a real server: raw hands out the grayscale original with its halftone mode;
+# an edited image (here rotated to landscape, so wider than the paper) comes back fitted to 576 dots
+import threading, urllib.request
+from http.server import ThreadingHTTPServer
+srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+def call(path, body=b"", ctype="application/octet-stream"):
+    r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{path}", data=body,
+                                                      method="POST", headers={"Content-Type": ctype}))
+    return r.headers, Image.open(io.BytesIO(r.read()))
+hdr, raw = call("/api/photo?raw=1", buf.getvalue(), "image/jpeg")
+assert hdr["X-Dither"] == "1" and raw.width == 576 and len(set(raw.tobytes())) > 2  # grayscale, not yet dithered
+hdr, raw_txt = call("/api/card/art?raw=1")
+assert hdr["X-Dither"] == "0"
+landscape = io.BytesIO()
+raw.rotate(90, expand=True).save(landscape, "PNG")
+_, back = call("/api/image?dither=1", landscape.getvalue(), "image/png")
+assert back.width == 576 and back.height == round(576 * 576 / raw.height) and set(back.convert("L").tobytes()) <= {0, 255}
+srv.shutdown()
 
 # brightness/contrast reach every print: on text, darker = bolder strokes (more black dots), brighter = thinner
 ink = lambda png: Image.open(io.BytesIO(png)).convert("L").histogram()[0]
@@ -204,7 +218,7 @@ txt = layout.answer("q", "Brødskive med brunost og syltetøy " * 6, t0)
 assert ink(web.render(txt, False, brightness=0.5)) > ink(web.render(txt, False)) > ink(web.render(txt, False, brightness=1.6))
 photo_png = web.render(pic, False, dither=True, contrast=1.8)  # photos stay grayscale until the final dither
 assert set(Image.open(io.BytesIO(photo_png)).convert("L").tobytes()) <= {0, 255}
-assert web.edits({"brightness": "99", "contrast": "0"}) == {"top": 0, "bottom": None, "brightness": 3.0, "contrast": 0.2}
+assert web.edits({"brightness": "99", "contrast": "0"}) == {"brightness": 3.0, "contrast": 0.2}
 assert agent.STOPS[0] == ("Oslo S", "rail") if "WEATHERBOY_STOPS" not in os.environ else True
 
 import speak

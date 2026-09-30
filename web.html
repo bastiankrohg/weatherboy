@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weatherboy</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40'%3E%3Cpath d='M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z' fill='%23fff' stroke='%23211e1a' stroke-width='3.5' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #efeae1; --card: #fbf8f2; --ink: #211e1a; --muted: #736b5f; --line: #ddd5c7;
@@ -14,6 +15,7 @@
             --accent: #e08a62; --ok: #8cc47f; --bad: #f08a80; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* the hidden attribute must win over display: grid etc. */
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { display: flex; align-items: center; gap: 12px; padding: 18px 16px 6px; max-width: 1100px; margin: 0 auto; }
@@ -83,13 +85,14 @@
   .actions .icon { flex: 0 0 auto; padding: 9px 11px; line-height: 0; }
   .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
   .icon[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
-  .paper.editing { position: relative; touch-action: none; }
-  .shade { position: absolute; left: 0; right: 0; background: rgb(30 27 23 / .55); pointer-events: none; }
-  .handle { position: absolute; left: 0; right: 0; height: 28px; margin-top: -14px; cursor: ns-resize; }
-  .handle::before { content: ""; position: absolute; left: 0; right: 0; top: 13px; border-top: 2px dashed var(--accent); }
-  .handle span { position: absolute; right: 6px; top: 2px; font: 600 11px/1 system-ui, sans-serif; color: #fff;
-                 background: var(--accent); border-radius: 4px; padding: 4px 6px; }
   .editor { margin-top: 10px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .tools button { padding: 6px 10px; font-size: 14px; }
+  .tools button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .tools label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .tools input[type=range] { width: 90px; }
+  #canvas { width: 100%; display: block; background: #fff; touch-action: none; cursor: crosshair;
+            border-radius: 2px; box-shadow: 0 1px 4px rgb(0 0 0 / .18); }
   .editor textarea { min-height: 160px; font-size: 14px; }
   .editor .row { margin-top: 8px; }
 </style>
@@ -127,7 +130,10 @@
 
     <div class="card">
       <h2>Bilde</h2>
-      <label class="file">Velg eller ta et bilde<input type="file" accept="image/*" id="photo"></label>
+      <div class="row">
+        <label class="file">Velg eller ta et bilde<input type="file" accept="image/*" id="photo"></label>
+        <button id="blank">Tegn på blankt ark</button>
+      </div>
     </div>
 
     <div class="card">
@@ -153,14 +159,26 @@
       <label class="slider">Kontrast <input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1"><output>1.00</output></label>
       <div class="actions">
         <button class="primary" id="print" disabled>Skriv ut</button>
-        <button class="icon" id="edit" disabled aria-pressed="false" title="Rediger: flytt start og klipp, endre tekst" aria-label="Rediger">
+        <button class="icon" id="edit" disabled aria-pressed="false" title="Rediger: beskjær, roter, tegn, endre tekst" aria-label="Rediger">
           <svg viewBox="0 0 24 24"><path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M13.5 6.5l4 4"/></svg>
         </button>
       </div>
       <div class="editor" id="editor" hidden>
-        <p class="msg" id="length"></p>
         <textarea id="edittext" hidden aria-label="Tekst som skrives ut"></textarea>
-        <div class="row"><button id="apply" hidden>Oppdater teksten</button><button id="reset">Nullstill klipp</button></div>
+        <div class="row" id="textrow" hidden><button id="apply">Oppdater teksten</button></div>
+        <div class="tools" role="toolbar" aria-label="Bilderedigering">
+          <button data-tool="crop" title="Dra et rektangel rundt det som skal med">Beskjær</button>
+          <button data-tool="pen" title="Tegn med svart">Penn</button>
+          <button data-tool="white" title="Tegn med hvitt: dekk over noe">Hvit</button>
+          <button data-tool="eraser" title="Visk ut det du har tegnet">Visk</button>
+          <button id="rotl" title="Roter mot klokka" aria-label="Roter mot klokka">⟲</button>
+          <button id="rotr" title="Roter med klokka" aria-label="Roter med klokka">⟳</button>
+          <button id="undo" title="Angre" aria-label="Angre">↶</button>
+          <label>Strek <input type="range" id="pensize" min="2" max="40" value="6"></label>
+        </div>
+        <canvas id="canvas" aria-label="Tegneflate"></canvas>
+        <p class="msg" id="length"></p>
+        <div class="row"><button id="cancel">Avbryt</button><button class="primary" id="done">Bruk endringene</button></div>
       </div>
       <p class="msg" id="msg"></p>
     </div>
@@ -174,7 +192,6 @@
 <script>
 const $ = s => document.querySelector(s);
 let current = null;  // the request behind the preview; "Skriv ut" repeats it with print=1
-let crop = null;     // {top, bottom, h} in printer dots (8 per mm): what's kept when printing
 let editing = false;
 
 function say(text, bad = false) { const m = $("#msg"); m.textContent = text; m.classList.toggle("bad", bad); }
@@ -183,7 +200,6 @@ async function receipt(path, body = null, type = null, print = false) {
   const params = new URLSearchParams();
   if (print) params.set("print", "1");
   for (const k of ["brightness", "contrast"]) if ($("#" + k).value !== "1") params.set(k, $("#" + k).value);
-  if (print && crop && (crop.top > 0 || crop.bottom < crop.h)) { params.set("top", crop.top); params.set("bottom", crop.bottom); }
   const url = params.size ? path + (path.includes("?") ? "&" : "?") + params : path;
   const r = await fetch(url, { method: "POST", body, headers: type ? { "Content-Type": type } : {} });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
@@ -202,10 +218,8 @@ async function preview(path, body = null, type = null, extra = {}) {
     await img.decode();
     $("#paper").innerHTML = "";
     $("#paper").append(img);
-    crop = { top: 0, bottom: img.naturalHeight, h: img.naturalHeight };
     $("#print").disabled = $("#edit").disabled = false;
     say("");
-    showEditor();
     if (matchMedia("(max-width: 820px)").matches) $("#paper").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { say(e.message, true); }
 }
@@ -219,59 +233,171 @@ $("#print").onclick = async () => {
   refreshStatus();
 };
 
-// Editing: two draggable lines on the preview (start, and where the cutter cuts), and the text of Claude's answers.
-$("#edit").onclick = () => { editing = !editing; showEditor(); };
+// The editor: every receipt is an image. The pencil fetches the receipt's grayscale original (?raw=1) into a
+// canvas; crop, rotation and drawing happen here; "Bruk endringene" sends the result to /api/image, which then
+// previews and prints like everything else.
+const ed = { base: null, ink: null, crop: null, tool: "pen", undo: [], dither: false, penSeen: false };
+const cv = $("#canvas");
+
+$("#edit").onclick = async () => {
+  if (editing) return closeEditor();
+  say("Åpner redigering …");
+  try {
+    const { path, body, type } = current;
+    const r = await fetch(path + (path.includes("?") ? "&" : "?") + "raw=1",
+                          { method: "POST", body, headers: type ? { "Content-Type": type } : {} });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    openEditor(await createImageBitmap(await r.blob()), r.headers.get("X-Dither") === "1", "crop");
+    say("");
+  } catch (e) { say(e.message, true); }
+};
+
+$("#blank").onclick = () => {
+  const white = layer(576, 800, x => { x.fillStyle = "#fff"; x.fillRect(0, 0, 576, 800); });
+  current = current || { path: "/api/image", body: null, type: null };
+  openEditor(white, false, "pen");
+  if (matchMedia("(max-width: 820px)").matches) cv.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+function openEditor(image, dither, tool) {
+  ed.base = layer(image.width, image.height, x => x.drawImage(image, 0, 0));
+  ed.ink = layer(image.width, image.height);
+  ed.crop = { x: 0, y: 0, w: image.width, h: image.height };
+  ed.undo = [];
+  ed.dither = dither;
+  editing = true;
+  setTool(tool);
+  showEditor();
+}
+
+function closeEditor() { editing = false; showEditor(); }
 
 function showEditor() {
   $("#edit").setAttribute("aria-pressed", editing);
-  $("#editor").hidden = !editing || !crop;
-  const paper = $("#paper");
-  paper.classList.toggle("editing", editing && !!crop);
-  paper.querySelectorAll(".shade, .handle").forEach(el => el.remove());
+  $("#editor").hidden = !editing;
+  $("#paper").hidden = editing;
   const isText = current?.a !== undefined;
-  $("#edittext").hidden = $("#apply").hidden = !isText;
+  $("#edittext").hidden = $("#textrow").hidden = !isText;
   if (isText && $("#edittext").dataset.for !== current.a) { $("#edittext").value = current.a; $("#edittext").dataset.for = current.a; }
-  if (!editing || !crop) return;
-  const shadeTop = Object.assign(document.createElement("div"), { className: "shade" });
-  const shadeBottom = Object.assign(document.createElement("div"), { className: "shade" });
-  const start = handle("start"), cut = handle("✂ klipp her");
-  paper.append(shadeTop, shadeBottom, start, cut);
-  const scale = () => paper.querySelector("img").clientHeight / crop.h;  // screen px per printer dot
-  function place() {
-    const s = scale();
-    start.style.top = crop.top * s + "px";
-    cut.style.top = crop.bottom * s + "px";
-    Object.assign(shadeTop.style, { top: 0, height: crop.top * s + "px" });
-    Object.assign(shadeBottom.style, { top: crop.bottom * s + "px", bottom: 0 });
-    $("#length").textContent = `Papir: ${Math.round((crop.bottom - crop.top) / 8)} mm (pluss ca. 15 mm fram til kutteren). Dra linjene for å flytte start og klipp.`;
+  if (editing) draw();
+}
+
+function layer(w, h, paint) {
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  if (paint) paint(c.getContext("2d"));
+  return c;
+}
+
+function draw() {
+  const { base, ink, crop } = ed;
+  cv.width = base.width; cv.height = base.height;
+  const x = cv.getContext("2d");
+  x.drawImage(base, 0, 0);
+  x.drawImage(ink, 0, 0);
+  if (crop.w < base.width || crop.h < base.height) {  // dim what gets cut away
+    x.fillStyle = "rgb(30 27 23 / .55)";
+    x.fillRect(0, 0, base.width, crop.y);
+    x.fillRect(0, crop.y + crop.h, base.width, base.height - crop.y - crop.h);
+    x.fillRect(0, crop.y, crop.x, crop.h);
+    x.fillRect(crop.x + crop.w, crop.y, base.width - crop.x - crop.w, crop.h);
   }
-  drag(start, y => { crop.top = Math.max(0, Math.min(y / scale(), crop.bottom - 40)); place(); });
-  drag(cut, y => { crop.bottom = Math.min(crop.h, Math.max(y / scale(), crop.top + 40)); place(); });
-  place();
+  x.setLineDash([10, 6]);
+  x.lineWidth = Math.max(2, base.width / 200);
+  x.strokeStyle = "#c2552b";
+  x.strokeRect(crop.x, crop.y, crop.w, crop.h);
+  $("#length").textContent = `Papir: ca. ${Math.round(crop.h * 576 / crop.w / 8)} mm, pluss ca. 15 mm fram til kutteren.`;
 }
 
-function handle(label) {
-  const h = Object.assign(document.createElement("div"), { className: "handle" });
-  h.append(Object.assign(document.createElement("span"), { textContent: label }));
-  return h;
+function setTool(tool) {
+  ed.tool = tool;
+  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === tool));
+}
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+
+function pos(e) {  // pointer position in image pixels
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height };
 }
 
-function drag(el, move) {  // pointer events: mouse and touch alike
-  el.onpointerdown = ev => {
-    el.setPointerCapture(ev.pointerId);
-    const top = $("#paper").getBoundingClientRect().top;
-    el.onpointermove = e => move(e.clientY - top);
-    el.onpointerup = () => { el.onpointermove = null; crop.top = Math.round(crop.top); crop.bottom = Math.round(crop.bottom); };
-  };
+let stroke = null;
+cv.onpointerdown = e => {
+  if (e.pointerType === "pen") ed.penSeen = true;
+  if (ed.penSeen && e.pointerType === "touch") return;  // Apple Pencil in use: ignore the palm
+  cv.setPointerCapture(e.pointerId);
+  const p = pos(e);
+  if (ed.tool === "crop") { stroke = { start: p }; return; }
+  ed.undo.push(ed.ink.getContext("2d").getImageData(0, 0, ed.ink.width, ed.ink.height));
+  if (ed.undo.length > 20) ed.undo.shift();
+  stroke = { last: p };
+  paint(p, p, e);
+  draw();
+};
+cv.onpointermove = e => {
+  if (!stroke || (ed.penSeen && e.pointerType === "touch")) return;
+  const p = pos(e);
+  if (ed.tool === "crop") {
+    const snap = (v, max) => v < 12 ? 0 : v > max - 12 ? max : v;  // near an edge = the edge
+    const a = { x: snap(stroke.start.x, cv.width), y: snap(stroke.start.y, cv.height) };
+    const b = { x: snap(p.x, cv.width), y: snap(p.y, cv.height) };
+    ed.crop = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  } else {
+    for (const ev of e.getCoalescedEvents ? e.getCoalescedEvents() : [e]) {  // smooth lines from fast pens
+      const q = pos(ev);
+      paint(stroke.last, q, ev);
+      stroke.last = q;
+    }
+  }
+  draw();
+};
+cv.onpointerup = cv.onpointercancel = () => {
+  if (stroke && ed.tool === "crop" && (ed.crop.w < 16 || ed.crop.h < 16)) ed.crop = { x: 0, y: 0, w: cv.width, h: cv.height };
+  stroke = null;
+  draw();
+};
+
+function paint(a, b, e) {
+  const x = ed.ink.getContext("2d"), r = cv.getBoundingClientRect();
+  const pressure = e.pointerType === "pen" && e.pressure > 0 ? 0.3 + e.pressure * 1.4 : 1;
+  x.globalCompositeOperation = ed.tool === "eraser" ? "destination-out" : "source-over";
+  x.strokeStyle = ed.tool === "white" ? "#fff" : "#000";
+  x.lineWidth = $("#pensize").value * pressure * cv.width / r.width;  // the slider is in screen pixels
+  x.lineCap = x.lineJoin = "round";
+  x.beginPath();
+  x.moveTo(a.x, a.y);
+  x.lineTo(b.x, b.y);
+  x.stroke();
 }
 
-$("#reset").onclick = () => { if (crop) { crop.top = 0; crop.bottom = crop.h; showEditor(); } };
+function rotate(dir) {  // 90° clockwise (1) or counter-clockwise (-1): landscape <-> portrait
+  const turn = src => layer(src.height, src.width, x => {
+    x.translate(dir > 0 ? src.height : 0, dir > 0 ? 0 : src.width);
+    x.rotate(dir * Math.PI / 2);
+    x.drawImage(src, 0, 0);
+  });
+  ed.base = turn(ed.base);
+  ed.ink = turn(ed.ink);
+  ed.crop = { x: 0, y: 0, w: ed.base.width, h: ed.base.height };
+  ed.undo = [];
+  draw();
+}
+$("#rotl").onclick = () => rotate(-1);
+$("#rotr").onclick = () => rotate(1);
+$("#undo").onclick = () => { const u = ed.undo.pop(); if (u) { ed.ink.getContext("2d").putImageData(u, 0, 0); draw(); } };
+$("#cancel").onclick = closeEditor;
+$("#done").onclick = () => {
+  const { base, ink, crop } = ed;
+  const out = layer(Math.round(crop.w), Math.round(crop.h), x => {
+    x.drawImage(base, -crop.x, -crop.y);
+    x.drawImage(ink, -crop.x, -crop.y);
+  });
+  out.toBlob(blob => { closeEditor(); preview(`/api/image?dither=${ed.dither ? 1 : 0}`, blob, "image/png"); }, "image/png");
+};
 $("#apply").onclick = () => {
   const a = $("#edittext").value;
   const { q, icon } = current;
+  closeEditor();
   preview("/api/answer", JSON.stringify({ q, a, icon }), "application/json", { q, a, icon });
 };
-addEventListener("resize", () => editing && showEditor());
 
 document.querySelectorAll("[data-card]").forEach(b => b.onclick = () => preview("/api/card/" + b.dataset.card));
 

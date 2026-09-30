@@ -59,23 +59,20 @@ def photo(data):
 def edits(q):
     """The page's adjustments, from the query string. Anything missing means "leave it"."""
     clamp = lambda v, lo, hi: min(max(v, lo), hi)
-    return {"top": int(q.get("top", 0)), "bottom": int(q["bottom"]) if "bottom" in q else None,
-            "brightness": clamp(float(q.get("brightness", 1)), 0.2, 3.0),
+    return {"brightness": clamp(float(q.get("brightness", 1)), 0.2, 3.0),
             "contrast": clamp(float(q.get("contrast", 1)), 0.2, 4.0)}
 
 
-def render(img, do_print, top=0, bottom=None, brightness=1.0, contrast=1.0, dither=False):
-    """Every receipt goes through here: grayscale page -> brightness/contrast -> crop -> threshold (text) or
-    Atkinson dither (pictures) -> printer rows. Returns the PNG of exactly what the head fires; prints it too
-    when do_print. On text, brightness moves the threshold across the antialiased edges: brighter prints
-    thinner strokes, darker prints bolder ones."""
+def render(img, do_print, brightness=1.0, contrast=1.0, dither=False):
+    """Every receipt goes through here: grayscale page -> brightness/contrast -> threshold (text) or Atkinson
+    dither (pictures) -> printer rows. Returns the PNG of exactly what the head fires; prints it too when
+    do_print. On text, brightness moves the threshold across the antialiased edges: brighter prints thinner
+    strokes, darker prints bolder ones. Crops, rotations and drawings happen in the page's editor (/api/image)."""
     img = img.convert("L")
     if brightness != 1:
         img = ImageEnhance.Brightness(img).enhance(brightness)
     if contrast != 1:
         img = ImageEnhance.Contrast(img).enhance(contrast)
-    bottom = img.height if bottom is None else min(max(bottom, 1), img.height)
-    img = img.crop((0, min(max(top, 0), bottom - 1), img.width, bottom))
     if dither:
         img = layout.dither(img)
     job = printer.encode(layout.to_rows(img))
@@ -110,9 +107,11 @@ def recipes():
 
 
 class Handler(BaseHTTPRequestHandler):
-    def reply(self, code, body, ctype):
+    def reply(self, code, body, ctype, headers=()):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        for k, v in headers:
+            self.send_header(k, v)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -146,15 +145,23 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.json({"error": "not found"}, 404)
 
+    def receipt(self, img, q, dither=False):
+        """Every receipt endpoint ends here. ?raw=1 hands the page's image editor the grayscale original
+        (X-Dither says whether it's a picture); otherwise it's rendered, and printed with ?print=1."""
+        if q.get("raw") == "1":
+            buf = io.BytesIO()
+            img.convert("L").save(buf, "PNG")
+            return self.reply(200, buf.getvalue(), "image/png", [("X-Dither", "1" if dither else "0")])
+        self.reply(200, render(img, q.get("print") == "1", **edits(q), dither=dither), "image/png")
+
     def do_POST(self):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         n = int(self.headers.get("Content-Length") or 0)
         if n > MAX_UPLOAD:
             return self.json({"error": "Filen er for stor (maks 25 MB)."}, 413)
-        body, pr = self.rfile.read(n), q.get("print") == "1"
+        body = self.rfile.read(n)
         try:
-            adj = edits(q)
             if url.path == "/api/ask":
                 answer, dollars = agent.ask(json.loads(body)["q"])
                 icon, answer = layout.theme(answer)  # the "tema: x" line becomes the receipt's icon
@@ -167,22 +174,26 @@ class Handler(BaseHTTPRequestHandler):
                 self.json({"model": agent.model})
             elif url.path == "/api/answer":
                 d = json.loads(body)
-                img = (layout.recipe(d["a"]) if layout.is_recipe(d["a"])
-                       else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")))
-                self.reply(200, render(img, pr, **adj), "image/png")
+                self.receipt(layout.recipe(d["a"]) if layout.is_recipe(d["a"])
+                             else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")), q)
             elif url.path == "/api/recipes":  # a recipe typed on the page
                 self.json({"name": cookbook.add(json.loads(body)["markdown"])})
             elif url.path == "/api/photo":
-                self.reply(200, render(photo(body), pr, **adj, dither=True), "image/png")
+                self.receipt(photo(body), q, dither=True)
+            elif url.path == "/api/image":  # the page's image editor: crops, rotations and drawings come back here
+                img = ImageOps.exif_transpose(Image.open(io.BytesIO(body))).convert("L")
+                if img.width != layout.DOTS:  # rotated or drawn at another size: fit the paper width
+                    img = img.resize((layout.DOTS, max(1, round(img.height * layout.DOTS / img.width))), Image.LANCZOS)
+                self.receipt(img, q, dither=q.get("dither") == "1")
             elif url.path == "/api/recipe":
-                self.reply(200, render(layout.recipe(cookbook.read_recipe(q["name"])), pr, **adj), "image/png")
+                self.receipt(layout.recipe(cookbook.read_recipe(q["name"])), q)
             elif url.path == "/api/card/departures":  # ?stop= picks a board from agent.STOPS
                 stop = int(q.get("stop", 0))
                 if not 0 <= stop < len(agent.STOPS):
                     raise ValueError(f"No stop number {stop}")
-                self.reply(200, render(CARDS["departures"](stop), pr, **adj), "image/png")
+                self.receipt(CARDS["departures"](stop), q)
             elif url.path.startswith("/api/card/") and url.path[10:] in CARDS:
-                self.reply(200, render(CARDS[url.path[10:]](), pr, **adj), "image/png")
+                self.receipt(CARDS[url.path[10:]](), q)
             else:
                 self.json({"error": "not found"}, 404)
         except Exception as e:  # one bad request shouldn't take the server down; tell the page what broke
