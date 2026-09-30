@@ -66,14 +66,19 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-    B["Buttons: været, avganger, fly, dagens kunst"] --> PV
-    C["Spør Weatherboy<br/>(same Claude conversation as the phone)"] --> PV
-    F["Bilde: upload or take a photo<br/>brightness + contrast sliders"] --> PV
-    R["Oppskrifter"] --> PV
-    PV["Preview: the exact dots<br/>the printer would fire"] -->|"Skriv ut"| P[printer]
+    B["Kvitteringer: været, avganger (Oslo S, Jakob kirke,<br/>Jernbanetorget), fly, dagens kunst, QR<br/>+ wished-for presets"] --> PV
+    S["Felles handleliste<br/>shared, printed items tagged"] --> PV
+    C["Spør Weatherboy<br/>model picker + cost"] --> PV
+    F["Bilde: photo or blank sheet"] --> ED
+    R["Oppskrifter: tag filter,<br/>full or short card, → handleliste"] --> PV
+    PV["Preview: the exact dots<br/>brightness + contrast"] -->|"✎"| ED["Editor: text, crop,<br/>rotate, draw"]
+    ED --> PV
+    PV -->|"Skriv ut"| P[printer]
 ```
 
-The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut", except **dagens kunst**: with a printer configured, the server prints the day's maze at 12:00 (`WEATHERBOY_ART_AT`, empty turns it off). If the printer is off or out of paper it keeps trying every minute until 22:00, and it never prints the same day twice. Photos are rotated upright and Atkinson-dithered to 576 dots. There's no login, so anyone on the network can print.
+Every receipt is an image, and the ✎ opens it in one editor: fix the text of answers, recipes and lists, crop, rotate between portrait and landscape, and draw (Apple Pencil pressure works on an iPad). Brightness and contrast apply to every print; on text they make strokes thinner or bolder. "Ønsk deg en kvittering" asks Claude to add a new preset button: it only saves a prompt, never code. The shared shopping list and the presets live in `data/` (git-ignored).
+
+The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut", except **dagens kunst**: with a printer configured, the server prints the day's maze at 12:00 (`WEATHERBOY_ART_AT`, empty turns it off). If the printer is off or out of paper it keeps trying every minute until 22:00, and it never prints the same day twice. Photos are rotated upright and Atkinson-dithered to 576 dots; text is thresholded. There's no login, so anyone on the network can print.
 
 **Phones can't connect?** On Windows the firewall blocks it. Allowing "python.exe" doesn't last, because uv's Python lives in versioned folders. Allow the port instead, once, in an administrator PowerShell:
 
@@ -178,6 +183,7 @@ flowchart TD
     B --> C["uv run speak.py hei<br/>then tune --volume for the earpiece"]
     C --> P["uv run printer.py PRINTER_IP<br/>smoke-test page"]
     P --> D["uv run main.py --mic USB --speaker USB --printer PRINTER_IP"]
+    D --> T["uv run test_printer.py<br/>uv run --with playwright test_web_ui.py (clicks through the page in Edge)"]
 ```
 
 | Flag | Default | Notes |
