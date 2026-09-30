@@ -73,7 +73,15 @@ flowchart LR
     PV["Preview: the exact dots<br/>the printer would fire"] -->|"Skriv ut"| P[printer]
 ```
 
-The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut". Photos are rotated upright and Atkinson-dithered to 576 dots. There's no login, so anyone on the network can print. On Windows, allow Python through the firewall on private networks so phones can reach it.
+The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut". Photos are rotated upright and Atkinson-dithered to 576 dots. There's no login, so anyone on the network can print.
+
+**Phones can't connect?** On Windows the firewall blocks it. Allowing "python.exe" doesn't last, because uv's Python lives in versioned folders. Allow the port instead, once, in an administrator PowerShell:
+
+```powershell
+New-NetFirewallRule -DisplayName "Weatherboy web page (TCP 8615, local network)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8615 -RemoteAddress LocalSubnet -Profile Private,Public
+```
+
+It only admits devices on your own network. A Pi or Mac needs nothing.
 
 ## Recipes
 
