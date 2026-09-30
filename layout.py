@@ -82,6 +82,7 @@ def answer(question, text, when=None, icon=None):
     """Question small (provenance), answer big, theme icon on top. ``` fences render as monospace art."""
     if icon is None:
         icon, text = theme(text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)  # receipts are plain type; models still reach for **bold**
     small, body, sub, head = font(SANS, 20), font(SANS, 28), font(BOLD, 28), font(BOLD, 40)
     img, d = _canvas()
     y = _header(d, when, icon=icon)

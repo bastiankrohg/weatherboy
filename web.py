@@ -24,6 +24,7 @@ from PIL import Image, ImageEnhance, ImageOps
 import agent
 import cookbook
 import layout
+import presets
 import printer
 import shoplist
 
@@ -88,6 +89,15 @@ def render(img, do_print, brightness=1.0, contrast=1.0, dither=False):
     return buf.getvalue()
 
 
+def answer_json(answer, dollars, icon=None):
+    """What the page needs from one of Claude's answers."""
+    theme, answer = layout.theme(answer)  # the "tema: x" line becomes the receipt's icon
+    return {"answer": answer, "icon": icon or theme, "cost": dollars, "spent": agent.spent,
+            "model": agent.MODELS[agent.model]["name"],
+            # the recipe it read or drafted, so the page shows that card rather than a short note
+            "recipe": cookbook.last and cookbook.last.relative_to(cookbook.ROOT).with_suffix("").as_posix()}
+
+
 def status():
     """green: ready. yellow: on the network but won't print. red: can't reach it. off: no printer configured."""
     if not PRINTER:
@@ -149,6 +159,8 @@ class Handler(BaseHTTPRequestHandler):
                        "---\nporsjoner: 4\ntid: \ntags: \nkilde: \n---\n\n# \n\n## Ingredienser\n\n- \n\n## Slik gjør du\n\n1. \n"})
         elif path == "/api/shopping":
             self.json(shoplist.items())
+        elif path == "/api/presets":
+            self.json(presets.items())
         elif path == "/api/stops":
             self.json([{"name": n, "mode": m} for n, m in agent.STOPS])
         elif path == "/api/models":
@@ -175,12 +187,16 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(n)
         try:
             if url.path == "/api/ask":
-                answer, dollars = agent.ask(json.loads(body)["q"])
-                icon, answer = layout.theme(answer)  # the "tema: x" line becomes the receipt's icon
-                self.json({"answer": answer, "icon": icon, "cost": dollars, "spent": agent.spent,
-                           "model": agent.MODELS[agent.model]["name"],
-                           # the recipe it read or drafted, so the page shows that card rather than a short note
-                           "recipe": cookbook.last and cookbook.last.relative_to(cookbook.ROOT).with_suffix("").as_posix()})
+                self.json(answer_json(*agent.ask(json.loads(body)["q"])))
+            elif url.path == "/api/preset":  # a wished-for button: its prompt, asked like a question
+                p = presets.get(json.loads(body)["id"])
+                self.json(answer_json(*agent.ask(p["prompt"]), icon=p["icon"]))
+            elif url.path == "/api/wish":  # "ønsk deg en kvittering": Claude designs a preset, if it can
+                reply, preset, dollars = agent.design_preset(json.loads(body)["text"])
+                self.json({"reply": reply, "preset": preset, "cost": dollars, "spent": agent.spent})
+            elif url.path == "/api/presets":
+                presets.remove(json.loads(body)["remove"])
+                self.json(presets.items())
             elif url.path == "/api/model":
                 agent.set_model(json.loads(body)["model"])
                 self.json({"model": agent.model})
@@ -303,7 +319,8 @@ if __name__ == "__main__":
     p.add_argument("--printer", help="printer IP; omit for previews only")
     p.add_argument("--port", type=int, default=PORT)
     a = p.parse_args()
-    sys.stdout.reconfigure(errors="replace")  # never crash on a character the console can't show
+    # never crash on a character the console can't show; flush each line, so a service's log is live
+    sys.stdout.reconfigure(errors="replace", line_buffering=True)
     start(a.port, a.printer)
     print(banner())
     while True:

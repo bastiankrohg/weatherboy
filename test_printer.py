@@ -265,6 +265,24 @@ assert set(Image.open(io.BytesIO(photo_png)).convert("L").tobytes()) <= {0, 255}
 assert web.edits({"brightness": "99", "contrast": "0"}) == {"brightness": 3.0, "contrast": 0.2}
 assert agent.STOPS[0] == ("Oslo S", "rail") if "WEATHERBOY_STOPS" not in os.environ else True
 
+# stray **bold** from the model prints as plain words, not as asterisks and not dropped
+assert layout.answer("q", "**Ordet:** mugga", t0).tobytes() == layout.answer("q", "Ordet: mugga", t0).tobytes()
+
+# presets wished for on the page: data only; unknown icons fall back, removal works
+import presets
+presets.FILE = Path(tempfile.mkdtemp()) / "presets.json"
+assert "Dagens ord" in presets.create_preset("  Dagens   ord ", "Gi meg et sjeldent norsk ord.", icon="dinosaur")
+assert presets.last == {"id": 1, "name": "Dagens ord", "prompt": "Gi meg et sjeldent norsk ord.", "icon": "question"}
+presets.create_preset("Månefase", "Hvilken månefase er det i kveld?", "idea")
+assert [p["name"] for p in presets.items()] == ["Dagens ord", "Månefase"] and presets.get(2)["icon"] == "idea"
+presets.remove(1)
+assert [p["id"] for p in presets.items()] == [2]
+try:
+    presets.create_preset("", "x")
+    raise AssertionError("created a preset without a name")
+except ValueError:
+    pass
+
 # daily art: from its time until quiet hours, once a day
 from datetime import datetime as dt
 assert not web.art_due(dt(2026, 9, 30, 11, 59), "12:00", None)

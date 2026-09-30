@@ -10,6 +10,7 @@ import requests
 from anthropic import Anthropic, beta_tool
 
 import cookbook
+import presets
 import shoplist
 
 
@@ -242,30 +243,58 @@ def ask(question, voice=False):
 
 
 def _ask(question, voice):
-    global history, last_ask, spent
+    global history, last_ask
     if time.time() - last_ask > 600:  # ponytail: follow-ups work for 10 min, then a fresh conversation
         history = []
     last_ask = time.time()
     cookbook.last = None
     history.append({"role": "user", "content": f"[{datetime.now():%A %d.%m.%Y %H:%M}] {question}"})
+    return _run(VOICE if voice else PAPER, history)
+
+
+def _run(system, messages, extra_tools=()):
+    """The tool loop. Appends the conversation to `messages`; -> (final text, estimated $)."""
+    global spent
+    p = params(model)
+    p["tools"] = p["tools"] + list(extra_tools)
     dollars = 0.0
     for _ in range(5):  # the runner doesn't resume pause_turn (long server-tool turns); restart it
         runner = client.beta.messages.tool_runner(
-            model=model, system=VOICE if voice else PAPER, messages=list(history),
+            model=model, system=system, messages=list(messages),
             cache_control={"type": "ephemeral"},  # tool-loop turns re-send everything; cached reads cost 10%
-            **params(model))
+            **p)
         msg = None
         for msg in runner:
             dollars += cost(msg.model, msg.usage)
-            history.append({"role": "assistant", "content": msg.content})
+            messages.append({"role": "assistant", "content": msg.content})
             if (result := runner.generate_tool_call_response()) is not None:
-                history.append(result)
+                messages.append(result)
         if msg is None or msg.stop_reason != "pause_turn":
             break
     spent += dollars
     if msg is None or msg.stop_reason == "refusal":
         return "Sorry, I can't help with that one.", dollars
     return "".join(b.text for b in msg.content if b.type == "text").strip(), dollars
+
+
+PRESET = BASE + """
+Someone in the flat wants a new button on Weatherboy's web page that prints a receipt when pressed. Design it:
+a short Norwegian name, and the exact prompt you'll be given each time the button is pressed (you'll have all
+your usual tools then, including web search and web fetch). If a free public API that needs no key fits, put
+its full URL in the prompt, and check it answers with web_fetch first. Then call create_preset once.
+Keep the prompt short and general, asking for one thing per press; no example answers or word lists in it,
+or every press comes out alike. If it can't be done with those tools, create nothing and say briefly, in
+Norwegian, why."""
+
+
+def design_preset(request):
+    """A wish from the page -> maybe a new preset button. -> (reply text, the preset or None, estimated $)."""
+    if not (client.api_key or client.auth_token):
+        raise RuntimeError("Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py, og start på nytt.")
+    with _lock:
+        presets.last = None
+        reply, dollars = _run(PRESET, [{"role": "user", "content": request}], [beta_tool(presets.create_preset)])
+        return reply, presets.last, dollars
 
 
 if __name__ == "__main__":

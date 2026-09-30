@@ -7,12 +7,15 @@ import os
 
 from playwright.sync_api import sync_playwright
 
+import presets
 import shoplist
 import tempfile
 import web
 from pathlib import Path
 
 shoplist.FILE = Path(tempfile.mkdtemp()) / "handleliste.json"  # never the flat's real list
+presets.FILE = Path(tempfile.mkdtemp()) / "presets.json"  # nor its real buttons
+presets.create_preset("Dagens ord", "Gi meg et sjeldent norsk ord.", "idea")
 server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place
 B = f"http://127.0.0.1:{server.server_address[1]}"
 OUT = "out/"
@@ -112,6 +115,14 @@ with sync_playwright() as p:
     page.wait_for_function("() => current && current.kind === 'shopping' && document.querySelector('#paper img')")
     shop_ok = page.evaluate("() => current.ids.length === 2 && current.a.includes('- egg')")
 
+    # a wished-for preset shows as a button, and × removes it (after a confirm)
+    page.wait_for_selector(".preset button")
+    preset_label = page.inner_text(".preset button")
+    page.once("dialog", lambda dlg: dlg.accept())
+    page.click(".preset button:last-child")
+    page.wait_for_function("() => !document.querySelector('.preset')")
+    preset_ok = preset_label == "Dagens ord" and presets.items() == []
+
     # blank sheet
     page.click("#blank")
     blank = page.eval_on_selector("#canvas", "c => [c.width, c.height]")
@@ -127,5 +138,5 @@ assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/a
 print("short card", short_h, "px high | ingredients added", ingredients_added)
 assert short_h < full_h * 0.7 and ingredients_added >= 3
 print("filter", tag, "->", shown, "of", total)
-assert tool == "pen" and text_ok and shop_ok and filter_ok and not errors
+assert tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and not errors
 print("editor ok")

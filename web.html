@@ -73,7 +73,11 @@
   .qr { display: flex; gap: 12px; align-items: center; font-size: 14px; color: var(--muted); }
   .qr img { width: 96px; height: 96px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
   .qr a { color: var(--ink); word-break: break-all; }
-  .stops { margin-top: 8px; }
+  .stops, .presets, .wish { margin-top: 8px; }
+  .presets:empty { display: none; }
+  .preset { display: inline-flex; }
+  .preset button:first-child { border-radius: 8px 0 0 8px; }
+  .preset button:last-child { border-radius: 0 8px 8px 0; border-left: 0; padding: 9px 9px; color: var(--muted); }
   input[type=text] { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg);
                      border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
   .shoplist { list-style: none; margin: 12px 0 0; padding: 0; }
@@ -127,6 +131,13 @@
         <button data-card="qr">QR-lapp til veggen</button>
       </div>
       <div class="row stops" id="stops"></div>
+      <div class="row presets" id="presets"></div>
+      <form id="wish" class="row wish">
+        <input type="text" id="wishtext" placeholder="Ønsk deg en ny kvittering: dagens ord, månefase, en vits …"
+               autocomplete="off" aria-label="Ønsk deg en ny kvittering">
+        <button>Ønsk</button>
+      </form>
+      <p class="msg" id="wishmsg"></p>
     </div>
 
     <div class="card">
@@ -474,17 +485,14 @@ async function openRecipe(name) {
 
 document.querySelectorAll("[data-card]").forEach(b => b.onclick = () => preview("/api/card/" + b.dataset.card));
 
-$("#ask").onsubmit = async ev => {
-  ev.preventDefault();
-  const q = ev.target.q.value.trim(), btn = ev.target.querySelector("button");
-  if (!q) return;
-  btn.disabled = true; btn.textContent = "Tenker …";
+// Ask Claude and show the answer: from the question box, and from wished-for preset buttons
+async function askFlow(label, url, body) {
   const entry = document.createElement("div");
   entry.innerHTML = `<div class="q"></div><div class="a">…</div>`;
-  entry.querySelector(".q").textContent = q;
+  entry.querySelector(".q").textContent = label;
   $("#log").prepend(entry);
   try {
-    const r = await fetch("/api/ask", { method: "POST", body: JSON.stringify({ q }), headers: { "Content-Type": "application/json" } });
+    const r = await fetch(url, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     entry.querySelector(".a").textContent = d.answer;
@@ -492,6 +500,7 @@ $("#ask").onsubmit = async ev => {
     showSpent(d.spent);
     const again = Object.assign(document.createElement("button"), { textContent: d.recipe ? "Vis oppskriften" : "Vis kvittering" });
     // a recipe the answer read or drafted prints as its card, even if the model only described it
+    const q = label;
     const show = d.recipe && !isRecipe(d.answer)
       ? () => openRecipe(d.recipe)
       : () => preview("/api/text", JSON.stringify({ q, a: d.answer, icon: d.icon }), "application/json",
@@ -499,10 +508,52 @@ $("#ask").onsubmit = async ev => {
     if (d.recipe) loadRecipes();
     again.onclick = show;
     entry.append(again);
-    ev.target.q.value = "";
     show();
+    return true;
   } catch (e) { entry.querySelector(".a").textContent = "Feil: " + e.message; }
+}
+
+$("#ask").onsubmit = async ev => {
+  ev.preventDefault();
+  const q = ev.target.q.value.trim(), btn = ev.target.querySelector("button");
+  if (!q) return;
+  btn.disabled = true; btn.textContent = "Tenker …";
+  if (await askFlow(q, "/api/ask", { q })) ev.target.q.value = "";
   btn.disabled = false; btn.textContent = "Spør";
+};
+
+// Wished-for receipts: Claude designs a preset (name + prompt + icon); pressing it asks that prompt
+async function loadPresets() {
+  const row = $("#presets");
+  row.innerHTML = "";
+  for (const p of await (await fetch("/api/presets")).json()) {
+    const g = Object.assign(document.createElement("span"), { className: "preset" });
+    const b = Object.assign(document.createElement("button"), { textContent: p.name, title: p.prompt });
+    b.onclick = async () => { b.disabled = true; await askFlow(p.name, "/api/preset", { id: p.id }); b.disabled = false; };
+    const x = Object.assign(document.createElement("button"), { textContent: "×", title: "Fjern knappen", ariaLabel: "Fjern " + p.name });
+    x.onclick = async () => {
+      if (!confirm(`Fjerne «${p.name}»?`)) return;
+      await fetch("/api/presets", { method: "POST", body: JSON.stringify({ remove: p.id }), headers: { "Content-Type": "application/json" } });
+      loadPresets();
+    };
+    g.append(b, x);
+    row.append(g);
+  }
+}
+$("#wish").onsubmit = async ev => {
+  ev.preventDefault();
+  const text = $("#wishtext").value.trim(), btn = ev.target.querySelector("button"), msg = $("#wishmsg");
+  if (!text) return;
+  btn.disabled = true; btn.textContent = "Lager …"; msg.textContent = "";
+  try {
+    const r = await fetch("/api/wish", { method: "POST", body: JSON.stringify({ text }), headers: { "Content-Type": "application/json" } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    showSpent(d.spent);
+    msg.textContent = (d.preset ? `Ny knapp: «${d.preset.name}». ` : "") + d.reply + ` (≈ $${d.cost.toFixed(4)})`;
+    if (d.preset) { $("#wishtext").value = ""; await loadPresets(); }
+  } catch (e) { msg.textContent = "Feil: " + e.message; }
+  btn.disabled = false; btn.textContent = "Ønsk";
 };
 $("#ask textarea").onkeydown = ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) $("#ask").requestSubmit(); };
 
@@ -650,6 +701,7 @@ $("#shopprint").onclick = () => {
 
 refreshStatus(); setInterval(() => { refreshStatus(); loadShop(); }, 10000);
 loadShop();
+loadPresets();
 loadModels();
 loadStops();
 fetch("/api/url").then(r => r.json()).then(d => { const a = $("#url"); a.href = a.textContent = d.url; });

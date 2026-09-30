@@ -61,7 +61,8 @@ def main():
     p.add_argument("--phone", action="store_true", help="ESP32 in the F615: listen only while off hook, drive its LCD")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
     a = p.parse_args()
-    sys.stdout.reconfigure(errors="replace")  # an emoji in an answer must not crash the loop on a cp1252 console
+    # an emoji in an answer must not crash the loop on a cp1252 console; flush each line for service logs
+    sys.stdout.reconfigure(errors="replace", line_buffering=True)
     password = [w.strip().lower() for w in a.password.split(",")]
 
     if a.web:
