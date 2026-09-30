@@ -69,6 +69,16 @@ with sync_playwright() as p:
     path = page.evaluate("() => current.path")
     page.screenshot(path=OUT + "ui_after.png")
 
+    # recipe filter: the chips come from the tags; picking one shows only recipes with it, again shows all
+    page.wait_for_selector("#tagchips button")
+    total = page.evaluate("() => recipeList.length")
+    chip = page.locator("#tagchips button").first
+    tag = chip.inner_text().rsplit(" ", 1)
+    chip.click()
+    shown = page.evaluate("() => document.querySelectorAll('#recipes li button').length")
+    page.locator("#tagchips button").first.click()
+    filter_ok = int(tag[1]) == shown <= total and page.evaluate("() => document.querySelectorAll('#recipes li button').length") == total
+
     # text editor: a recipe from the list opens as text; editing it re-renders the card (not saved: real collection)
     page.click(".recipes li button")
     page.wait_for_function("() => current && current.recipe && document.querySelector('#paper img')")
@@ -116,5 +126,6 @@ assert size == first and crop["y"] == 0 and crop["x"] == 0 and crop["w"] == size
 assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/api/image") and blank == [576, 800]
 print("short card", short_h, "px high | ingredients added", ingredients_added)
 assert short_h < full_h * 0.7 and ingredients_added >= 3
-assert tool == "pen" and text_ok and shop_ok and not errors
+print("filter", tag, "->", shown, "of", total)
+assert tool == "pen" and text_ok and shop_ok and filter_ok and not errors
 print("editor ok")

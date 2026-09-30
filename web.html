@@ -85,6 +85,9 @@
   .shopactions { margin-top: 12px; align-items: center; }
   .check { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted); margin-right: auto; }
   .newrecipe { margin-top: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chips button { font-size: 13px; padding: 4px 10px; border-radius: 999px; }
+  .chips button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
   #recipeactions { margin-top: 8px; }
   #recipeform { margin-top: 12px; }
   #recipetext { min-height: 320px; font: 13px/1.5 ui-monospace, Consolas, Menlo, monospace; }
@@ -163,6 +166,7 @@
 
     <div class="card">
       <h2>Oppskrifter</h2>
+      <div class="chips" id="tagchips" role="group" aria-label="Vis bare oppskrifter med"></div>
       <ul class="recipes" id="recipes"><li class="msg">Henter …</li></ul>
       <div class="row newrecipe"><button id="newrecipe">+ Ny oppskrift</button></div>
       <div id="recipeform" hidden>
@@ -517,20 +521,39 @@ for (const s of ["#brightness", "#contrast"]) {
   };
 }
 
+// Recipes, filterable by tag: tap chips to show only recipes with any of them ("utkast" = drafts)
+let recipeList = [];
+const picked = new Set();
+const tagsOf = r => [...r.tags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean), ...(r.draft ? ["utkast"] : [])];
+
 async function loadRecipes() {
+  try { recipeList = await (await fetch("/api/recipes")).json(); }
+  catch { $("#recipes").innerHTML = '<li class="msg">Fant ikke oppskriftene.</li>'; return; }
+  renderRecipes();
+}
+
+function renderRecipes() {
+  const count = {};
+  recipeList.flatMap(tagsOf).forEach(t => count[t] = (count[t] || 0) + 1);
+  const chips = $("#tagchips");
+  chips.innerHTML = "";
+  for (const t of Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b, "no"))) {
+    const c = Object.assign(document.createElement("button"), { textContent: `${t} ${count[t]}` });
+    c.setAttribute("aria-pressed", picked.has(t));
+    c.onclick = () => { picked.has(t) ? picked.delete(t) : picked.add(t); renderRecipes(); };
+    chips.append(c);
+  }
+  const shown = recipeList.filter(r => !picked.size || tagsOf(r).some(t => picked.has(t)));
   const list = $("#recipes");
-  try {
-    const rs = await (await fetch("/api/recipes")).json();
-    list.innerHTML = rs.length ? "" : '<li class="msg">Ingen oppskrifter ennå.</li>';
-    for (const r of rs) {
-      const li = document.createElement("li"), b = document.createElement("button");
-      b.textContent = r.title;
-      if (r.tags) b.append(Object.assign(document.createElement("small"), { textContent: r.tags }));
-      if (r.draft) b.append(Object.assign(document.createElement("span"), { className: "draft", textContent: "utkast" }));
-      b.onclick = () => openRecipe(r.name);
-      li.append(b); list.append(li);
-    }
-  } catch { list.innerHTML = '<li class="msg">Fant ikke oppskriftene.</li>'; }
+  list.innerHTML = shown.length ? "" : `<li class="msg">${recipeList.length ? "Ingen oppskrifter med de merkene." : "Ingen oppskrifter ennå."}</li>`;
+  for (const r of shown) {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.textContent = r.title;
+    if (r.tags) b.append(Object.assign(document.createElement("small"), { textContent: r.tags }));
+    if (r.draft) b.append(Object.assign(document.createElement("span"), { className: "draft", textContent: "utkast" }));
+    b.onclick = () => openRecipe(r.name);
+    li.append(b); list.append(li);
+  }
 }
 
 async function refreshStatus() {
