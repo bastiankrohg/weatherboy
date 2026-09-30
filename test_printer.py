@@ -197,6 +197,14 @@ tall = layout.maze(date(2026, 9, 30), t0)
 cut = Image.open(io.BytesIO(web.render(tall, False, 100, 300)))
 assert cut.size == (576, 200) and cut.tobytes() == tall.crop((0, 100, 576, 300)).convert("1").convert("L").tobytes()
 assert Image.open(io.BytesIO(web.render(tall, False, -5, 99999))).height == tall.height
+
+# brightness/contrast reach every print: on text, darker = bolder strokes (more black dots), brighter = thinner
+ink = lambda png: Image.open(io.BytesIO(png)).convert("L").histogram()[0]
+txt = layout.answer("q", "Brødskive med brunost og syltetøy " * 6, t0)
+assert ink(web.render(txt, False, brightness=0.5)) > ink(web.render(txt, False)) > ink(web.render(txt, False, brightness=1.6))
+photo_png = web.render(pic, False, dither=True, contrast=1.8)  # photos stay grayscale until the final dither
+assert set(Image.open(io.BytesIO(photo_png)).convert("L").tobytes()) <= {0, 255}
+assert web.edits({"brightness": "99", "contrast": "0"}) == {"top": 0, "bottom": None, "brightness": 3.0, "contrast": 0.2}
 assert agent.STOPS[0] == ("Oslo S", "rail") if "WEATHERBOY_STOPS" not in os.environ else True
 
 import speak

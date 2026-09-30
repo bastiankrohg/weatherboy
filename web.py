@@ -50,17 +50,34 @@ CARDS = {  # the keyword receipts, shared with main.py
 }
 
 
-def photo(data, brightness=1.0, contrast=1.0):
+def photo(data):
+    """An uploaded photo as a grayscale page (dithered later, in render, after any edits)."""
     img = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))  # phones store rotation in EXIF
-    img = ImageEnhance.Contrast(ImageEnhance.Brightness(img.convert("L")).enhance(brightness)).enhance(contrast)
-    return layout.photo(layout.dither(img))  # stamped when rendered: at upload for the preview, at print for paper
+    return layout.photo(img.convert("L"))  # stamped when rendered: at upload for the preview, at print for paper
 
 
-def render(img, do_print, top=0, bottom=None):
-    """-> PNG of exactly what the head fires; sends it to the printer too when do_print.
-    top/bottom: the rows to keep, in printer dots, from the page's draggable start and cut lines."""
+def edits(q):
+    """The page's adjustments, from the query string. Anything missing means "leave it"."""
+    clamp = lambda v, lo, hi: min(max(v, lo), hi)
+    return {"top": int(q.get("top", 0)), "bottom": int(q["bottom"]) if "bottom" in q else None,
+            "brightness": clamp(float(q.get("brightness", 1)), 0.2, 3.0),
+            "contrast": clamp(float(q.get("contrast", 1)), 0.2, 4.0)}
+
+
+def render(img, do_print, top=0, bottom=None, brightness=1.0, contrast=1.0, dither=False):
+    """Every receipt goes through here: grayscale page -> brightness/contrast -> crop -> threshold (text) or
+    Atkinson dither (pictures) -> printer rows. Returns the PNG of exactly what the head fires; prints it too
+    when do_print. On text, brightness moves the threshold across the antialiased edges: brighter prints
+    thinner strokes, darker prints bolder ones."""
+    img = img.convert("L")
+    if brightness != 1:
+        img = ImageEnhance.Brightness(img).enhance(brightness)
+    if contrast != 1:
+        img = ImageEnhance.Contrast(img).enhance(contrast)
     bottom = img.height if bottom is None else min(max(bottom, 1), img.height)
     img = img.crop((0, min(max(top, 0), bottom - 1), img.width, bottom))
+    if dither:
+        img = layout.dither(img)
     job = printer.encode(layout.to_rows(img))
     if do_print:
         if not PRINTER:
@@ -137,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "Filen er for stor (maks 25 MB)."}, 413)
         body, pr = self.rfile.read(n), q.get("print") == "1"
         try:
-            crop = (int(q.get("top", 0)), int(q["bottom"]) if "bottom" in q else None)
+            adj = edits(q)
             if url.path == "/api/ask":
                 answer, dollars = agent.ask(json.loads(body)["q"])
                 icon, answer = layout.theme(answer)  # the "tema: x" line becomes the receipt's icon
@@ -152,21 +169,20 @@ class Handler(BaseHTTPRequestHandler):
                 d = json.loads(body)
                 img = (layout.recipe(d["a"]) if layout.is_recipe(d["a"])
                        else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")))
-                self.reply(200, render(img, pr, *crop), "image/png")
+                self.reply(200, render(img, pr, **adj), "image/png")
             elif url.path == "/api/recipes":  # a recipe typed on the page
                 self.json({"name": cookbook.add(json.loads(body)["markdown"])})
             elif url.path == "/api/photo":
-                img = photo(body, float(q.get("brightness", 1)), float(q.get("contrast", 1)))
-                self.reply(200, render(img, pr, *crop), "image/png")
+                self.reply(200, render(photo(body), pr, **adj, dither=True), "image/png")
             elif url.path == "/api/recipe":
-                self.reply(200, render(layout.recipe(cookbook.read_recipe(q["name"])), pr, *crop), "image/png")
+                self.reply(200, render(layout.recipe(cookbook.read_recipe(q["name"])), pr, **adj), "image/png")
             elif url.path == "/api/card/departures":  # ?stop= picks a board from agent.STOPS
                 stop = int(q.get("stop", 0))
                 if not 0 <= stop < len(agent.STOPS):
                     raise ValueError(f"No stop number {stop}")
-                self.reply(200, render(CARDS["departures"](stop), pr, *crop), "image/png")
+                self.reply(200, render(CARDS["departures"](stop), pr, **adj), "image/png")
             elif url.path.startswith("/api/card/") and url.path[10:] in CARDS:
-                self.reply(200, render(CARDS[url.path[10:]](), pr, *crop), "image/png")
+                self.reply(200, render(CARDS[url.path[10:]](), pr, **adj), "image/png")
             else:
                 self.json({"error": "not found"}, 404)
         except Exception as e:  # one bad request shouldn't take the server down; tell the page what broke

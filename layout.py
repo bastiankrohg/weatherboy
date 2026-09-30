@@ -444,7 +444,9 @@ ICONS = {"question": question, "cooking": cooking, "cocktail": cocktail, "weathe
 
 
 def photo(picture, when=None):
-    """A dithered photo, full bleed, under a camera icon (left) and when it was printed (right)."""
+    """A photo, full bleed at 576 dots, under a camera icon (left) and when it was printed (right).
+    Stays grayscale: the whole page gets dithered at the end, so brightness/contrast edits still reach it."""
+    picture = picture.convert("L").resize((DOTS, round(picture.height * DOTS / picture.width)), Image.LANCZOS)
     small = font(SANS, 20)
     img, d = _canvas()
     camera(d, M, 24)

@@ -128,8 +128,6 @@
     <div class="card">
       <h2>Bilde</h2>
       <label class="file">Velg eller ta et bilde<input type="file" accept="image/*" id="photo"></label>
-      <label class="slider">Lysstyrke <input type="range" id="brightness" min="0.5" max="1.8" step="0.05" value="1"><output>1.00</output></label>
-      <label class="slider">Kontrast <input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1"><output>1.00</output></label>
     </div>
 
     <div class="card">
@@ -151,6 +149,8 @@
     <div class="card">
       <h2>Forhåndsvisning</h2>
       <div class="paper" id="paper"><p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk.</p></div>
+      <label class="slider" title="Lysere gir tynnere strek på tekst, mørkere gir fetere">Lysstyrke <input type="range" id="brightness" min="0.4" max="1.8" step="0.05" value="1"><output>1.00</output></label>
+      <label class="slider">Kontrast <input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1"><output>1.00</output></label>
       <div class="actions">
         <button class="primary" id="print" disabled>Skriv ut</button>
         <button class="icon" id="edit" disabled aria-pressed="false" title="Rediger: flytt start og klipp, endre tekst" aria-label="Rediger">
@@ -182,6 +182,7 @@ function say(text, bad = false) { const m = $("#msg"); m.textContent = text; m.c
 async function receipt(path, body = null, type = null, print = false) {
   const params = new URLSearchParams();
   if (print) params.set("print", "1");
+  for (const k of ["brightness", "contrast"]) if ($("#" + k).value !== "1") params.set(k, $("#" + k).value);
   if (print && crop && (crop.top > 0 || crop.bottom < crop.h)) { params.set("top", crop.top); params.set("bottom", crop.bottom); }
   const url = params.size ? path + (path.includes("?") ? "&" : "?") + params : path;
   const r = await fetch(url, { method: "POST", body, headers: type ? { "Content-Type": type } : {} });
@@ -306,17 +307,18 @@ $("#ask").onsubmit = async ev => {
 };
 $("#ask textarea").onkeydown = ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) $("#ask").requestSubmit(); };
 
-let file = null, timer = null;
-function photoPreview() {
-  if (!file) return;
-  const b = $("#brightness").value, c = $("#contrast").value;
-  preview(`/api/photo?brightness=${b}&contrast=${c}`, file, file.type || "application/octet-stream");
-}
-$("#photo").onchange = ev => { file = ev.target.files[0]; photoPreview(); };
+$("#photo").onchange = ev => {
+  const file = ev.target.files[0];
+  if (file) preview("/api/photo", file, file.type || "application/octet-stream");
+};
+
+// Brightness and contrast apply to every print: re-render whatever is previewed as the sliders move
+let timer = null;
 for (const s of ["#brightness", "#contrast"]) {
   $(s).oninput = ev => {
     ev.target.nextElementSibling.textContent = Number(ev.target.value).toFixed(2);
-    clearTimeout(timer); timer = setTimeout(photoPreview, 350);
+    clearTimeout(timer);
+    timer = setTimeout(() => current && preview(current.path, current.body, current.type, current), 350);
   };
 }
 
