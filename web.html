@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weatherboy</title>
+<style>
+  :root {
+    --bg: #efeae1; --card: #fbf8f2; --ink: #211e1a; --muted: #736b5f; --line: #ddd5c7;
+    --accent: #9c3f1d; --ok: #3f7a3a; --bad: #a2322a; --paper: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1916; --card: #26231f; --ink: #eee8de; --muted: #a79e90; --line: #3a352f;
+            --accent: #e08a62; --ok: #8cc47f; --bad: #f08a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 18px 16px 6px; max-width: 1100px; margin: 0 auto; }
+  h1 { font: 600 26px/1 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; margin: 0; }
+  .cloud { width: 46px; height: 29px; display: block; fill: none; stroke: currentColor; stroke-width: 3.5;
+           stroke-linejoin: round; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pill { margin-left: auto; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+          color: var(--muted); white-space: nowrap; }
+  .pill::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px;
+                  background: var(--muted); vertical-align: 0; }
+  .pill.green::before { background: #3fae4a; box-shadow: 0 0 0 3px rgb(63 174 74 / .2); }
+  .pill.yellow::before { background: #e3b52b; box-shadow: 0 0 0 3px rgb(227 181 43 / .22); }
+  .pill.red::before { background: #d8453a; box-shadow: 0 0 0 3px rgb(216 69 58 / .22); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 12px 16px 40px;
+         max-width: 1100px; margin: 0 auto; align-items: start; }
+  @media (max-width: 820px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+  button, .file { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+                  border-radius: 8px; padding: 9px 14px; cursor: pointer; }
+  button:hover:not(:disabled), .file:hover { border-color: var(--muted); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--ink); color: var(--card); border-color: var(--ink); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  textarea { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+             border-radius: 8px; padding: 10px; resize: vertical; min-height: 64px; }
+  form .row { margin-top: 8px; justify-content: flex-end; }
+  .log { margin-top: 12px; display: grid; gap: 10px; }
+  .log .q { color: var(--muted); font-size: 14px; }
+  .log .a { white-space: pre-wrap; border-left: 3px solid var(--line); padding-left: 10px; }
+  .log button { margin-top: 6px; font-size: 14px; padding: 5px 10px; }
+  .file input { display: none; }
+  label.slider { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 8px;
+                 font-size: 14px; color: var(--muted); margin-top: 10px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .recipes { list-style: none; margin: 0; padding: 0; }
+  .recipes li button { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line);
+                       border-radius: 0; background: none; padding: 10px 2px; }
+  .recipes small { color: var(--muted); margin-left: 6px; }
+  .recipes .draft { color: var(--accent); font-size: 12px; margin-left: 6px; }
+  aside { position: sticky; top: 12px; }
+  .paper { background: var(--paper); border-radius: 2px; box-shadow: 0 1px 4px rgb(0 0 0 / .18); min-height: 120px;
+           display: grid; place-items: center; overflow: hidden;
+           -webkit-mask: linear-gradient(#000 0 0) top/100% calc(100% - 8px) no-repeat,
+                         conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom/12px 8px repeat-x;
+                   mask: linear-gradient(#000 0 0) top/100% calc(100% - 8px) no-repeat,
+                         conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom/12px 8px repeat-x; }
+  .paper img { width: 100%; display: block; image-rendering: pixelated; }
+  .paper .empty { color: #8a8378; font-size: 14px; padding: 40px 16px; text-align: center; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  .actions button { flex: 1; }
+  .msg { font-size: 14px; color: var(--muted); min-height: 1.4em; margin: 8px 0 0; }
+  .msg.bad { color: var(--bad); }
+  .qr { display: flex; gap: 12px; align-items: center; font-size: 14px; color: var(--muted); }
+  .qr img { width: 96px; height: 96px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
+  .qr a { color: var(--ink); word-break: break-all; }
+</style>
+</head>
+<body>
+<header>
+  <h1><svg class="cloud" viewBox="0 0 64 40" aria-hidden="true"><path d="M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z"/></svg><span class="sr">Weatherboy</span></h1>
+  <span class="pill" id="status">Skriver: …</span>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>Kvitteringer</h2>
+      <div class="row">
+        <button data-card="weather">Været</button>
+        <button data-card="departures">Avganger</button>
+        <button data-card="flights">Fly over oss</button>
+        <button data-card="art">Dagens kunst</button>
+        <button data-card="qr">QR-lapp til veggen</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Spør Weatherboy</h2>
+      <form id="ask">
+        <textarea name="q" placeholder="Hvordan blir været i helgen? Har vi en oppskrift på fiskesuppe?"></textarea>
+        <div class="row"><button class="primary">Spør</button></div>
+      </form>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="card">
+      <h2>Bilde</h2>
+      <label class="file">Velg eller ta et bilde<input type="file" accept="image/*" id="photo"></label>
+      <label class="slider">Lysstyrke <input type="range" id="brightness" min="0.5" max="1.8" step="0.05" value="1"><output>1.00</output></label>
+      <label class="slider">Kontrast <input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1"><output>1.00</output></label>
+    </div>
+
+    <div class="card">
+      <h2>Oppskrifter</h2>
+      <ul class="recipes" id="recipes"><li class="msg">Henter …</li></ul>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>Forhåndsvisning</h2>
+      <div class="paper" id="paper"><p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk.</p></div>
+      <div class="actions"><button class="primary" id="print" disabled>Skriv ut</button></div>
+      <p class="msg" id="msg"></p>
+    </div>
+    <div class="card">
+      <h2>Åpne på mobilen</h2>
+      <div class="qr"><img src="/api/qr.png" alt="QR-kode til denne siden"><div>Skann med kameraet, eller gå til<br><a id="url"></a></div></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let current = null;  // the request behind the preview; "Skriv ut" repeats it with print=1
+
+function say(text, bad = false) { const m = $("#msg"); m.textContent = text; m.classList.toggle("bad", bad); }
+
+async function receipt(path, body = null, type = null, print = false) {
+  const url = print ? path + (path.includes("?") ? "&" : "?") + "print=1" : path;
+  const r = await fetch(url, { method: "POST", body, headers: type ? { "Content-Type": type } : {} });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return URL.createObjectURL(await r.blob());
+}
+
+async function preview(path, body = null, type = null) {
+  current = { path, body, type };
+  $("#print").disabled = true;
+  say("Lager forhåndsvisning …");
+  try {
+    const src = await receipt(path, body, type);
+    if (current?.path !== path || current.body !== body) return;  // a newer preview won
+    $("#paper").innerHTML = "";
+    $("#paper").append(Object.assign(new Image(), { src, alt: "Forhåndsvisning av kvitteringen" }));
+    $("#print").disabled = false;
+    say("");
+    if (matchMedia("(max-width: 820px)").matches) $("#paper").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { say(e.message, true); }
+}
+
+$("#print").onclick = async () => {
+  $("#print").disabled = true;
+  say("Skriver ut …");
+  try { await receipt(current.path, current.body, current.type, true); say("Skrevet ut ✓"); }
+  catch (e) { say(e.message, true); }
+  $("#print").disabled = false;
+  refreshStatus();
+};
+
+document.querySelectorAll("[data-card]").forEach(b => b.onclick = () => preview("/api/card/" + b.dataset.card));
+
+$("#ask").onsubmit = async ev => {
+  ev.preventDefault();
+  const q = ev.target.q.value.trim(), btn = ev.target.querySelector("button");
+  if (!q) return;
+  btn.disabled = true; btn.textContent = "Tenker …";
+  const entry = document.createElement("div");
+  entry.innerHTML = `<div class="q"></div><div class="a">…</div>`;
+  entry.querySelector(".q").textContent = q;
+  $("#log").prepend(entry);
+  try {
+    const r = await fetch("/api/ask", { method: "POST", body: JSON.stringify({ q }), headers: { "Content-Type": "application/json" } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    entry.querySelector(".a").textContent = d.answer;
+    const again = Object.assign(document.createElement("button"), { textContent: "Vis kvittering" });
+    const show = () => preview("/api/answer", JSON.stringify({ q, a: d.answer }), "application/json");
+    again.onclick = show;
+    entry.append(again);
+    ev.target.q.value = "";
+    show();
+  } catch (e) { entry.querySelector(".a").textContent = "Feil: " + e.message; }
+  btn.disabled = false; btn.textContent = "Spør";
+};
+$("#ask textarea").onkeydown = ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) $("#ask").requestSubmit(); };
+
+let file = null, timer = null;
+function photoPreview() {
+  if (!file) return;
+  const b = $("#brightness").value, c = $("#contrast").value;
+  preview(`/api/photo?brightness=${b}&contrast=${c}`, file, file.type || "application/octet-stream");
+}
+$("#photo").onchange = ev => { file = ev.target.files[0]; photoPreview(); };
+for (const s of ["#brightness", "#contrast"]) {
+  $(s).oninput = ev => {
+    ev.target.nextElementSibling.textContent = Number(ev.target.value).toFixed(2);
+    clearTimeout(timer); timer = setTimeout(photoPreview, 350);
+  };
+}
+
+async function loadRecipes() {
+  const list = $("#recipes");
+  try {
+    const rs = await (await fetch("/api/recipes")).json();
+    list.innerHTML = rs.length ? "" : '<li class="msg">Ingen oppskrifter ennå.</li>';
+    for (const r of rs) {
+      const li = document.createElement("li"), b = document.createElement("button");
+      b.textContent = r.title;
+      if (r.tags) b.append(Object.assign(document.createElement("small"), { textContent: r.tags }));
+      if (r.draft) b.append(Object.assign(document.createElement("span"), { className: "draft", textContent: "utkast" }));
+      b.onclick = () => preview("/api/recipe?name=" + encodeURIComponent(r.name));
+      li.append(b); list.append(li);
+    }
+  } catch { list.innerHTML = '<li class="msg">Fant ikke oppskriftene.</li>'; }
+}
+
+async function refreshStatus() {
+  const p = $("#status");
+  try {
+    const s = await (await fetch("/api/status")).json();
+    p.textContent = "Skriver: " + s.state; p.className = "pill " + s.level;
+  } catch { p.textContent = "Serveren svarer ikke"; p.className = "pill red"; }
+}
+refreshStatus(); setInterval(refreshStatus, 10000);
+fetch("/api/url").then(r => r.json()).then(d => { const a = $("#url"); a.href = a.textContent = d.url; });
+loadRecipes();
+</script>
+</body>
+</html>

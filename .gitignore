@@ -1,0 +1,5 @@
+out/
+__pycache__/
+esp32/wifi.py
+recipes/
+.venv/

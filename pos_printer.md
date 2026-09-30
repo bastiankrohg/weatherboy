@@ -518,3 +518,15 @@ product page says so, and the reset article mentions a "Network Utility page
 password"), but I could not find the URL or port documented. Try
 `http://<ip>/` first; the TSP100III online manual at star-m.jp is the place to
 look if that fails.
+### First prints (2026-09-30)
+
+- **Address:** 192.168.0.217, port 9100, MAC `00:11:62:0f:ed:3f`.
+- **Port 9100 isn't silent after all.** The printer sends an 11-byte Star automatic status block
+  (`23 86 00 …` when ready) the moment a connection opens. That makes a pre-print check possible:
+  `python printer.py <ip> status`.
+- **With the cover open it refuses connections** instead of reporting "cover open". The error bits
+  in `printer.PROBLEMS` come from Star's spec and haven't been seen on this unit yet.
+- **Close the connection cleanly, or the job hangs.** Closing with that status block unread made
+  Windows reset the connection, and the printer never processed the end-of-job command. The receipt
+  sat in its buffer until the next job pushed it out. `printer.send` now reads the status, sends,
+  half-closes, and waits for the printer to hang up; it does that within about 50 ms.

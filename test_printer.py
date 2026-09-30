@@ -1,0 +1,139 @@
+"""python test_printer.py - offline checks, no printer or API key needed."""
+from datetime import datetime
+
+from PIL import Image
+
+import layout
+import printer
+
+# encoder round-trips and the smoke test is well-formed
+rows = printer.smoketest()
+job = printer.encode(rows)
+assert printer.decode(job) == rows
+assert job.startswith(b"\x1b*rA\x1b*rP0\x00") and job.endswith(b"\x1b*rB")
+assert job[len(printer.START):][:3] == b"b\x48\x00"  # 'b', n1=72, n2=0
+
+# printer status (ASB): the real unit's reply when ready; set bits name the problem
+assert printer.problems(bytes.fromhex("23 86 00 00 00 00 00 00 00 00 00")) == []
+assert printer.problems(bytes.fromhex("23 86 20 00 00 08 00 00 00")) == ["cover open", "out of paper"]
+assert printer.problems(b"") == []
+
+# bit order: leftmost dot is the MSB, black is 1
+img = Image.new("L", (576, 1), 255)
+img.putpixel((0, 0), 0)
+assert layout.to_rows(img) == [b"\x80" + bytes(71)]
+assert layout.from_rows(layout.to_rows(img)).getpixel((0, 0)) == 0
+
+# a receipt with wrapping, a heading, ascii art and norwegian letters renders 576 wide with ink
+art = "```\n" + "\n".join(["  \\ | /  ", "-- (_) --", "  / | \\  "] * 2) + "\n```"
+text = "# Sol på Sagene\nBlåbærsyltetøy " * 20 + "\n\n" + art + "\nhttps://example.com/" + "x" * 200
+r = layout.answer("hvordan blir været i kveld?", text, datetime(2026, 9, 29, 18, 42))
+assert r.width == 576 and r.height > 400
+assert r.getextrema()[0] == 0
+assert layout.wrap("a " * 500, layout.font(layout.SANS, 28)).__len__() > 5
+assert all(layout.font(layout.SANS, 28).getlength(l) <= layout.COL for l in layout.wrap("x" * 300, layout.font(layout.SANS, 28)))
+layout.to_rows(r)
+
+# dither produces pure black/white at printer width
+d = layout.dither(Image.linear_gradient("L").resize((64, 32)))
+assert d.width == 576 and set(d.tobytes()) <= {0, 255}
+
+# weather card, radar and the daily maze render; the maze is reproducible per date
+from datetime import date, timedelta
+t0 = datetime(2026, 9, 29, 18).astimezone()
+fc = [{"time": t0 + timedelta(hours=i), "temp": 10 + (i % 7), "wind": 3.2, "symbol": "lightrain_night",
+       "rain": 0.4 * (i % 3)} for i in range(24)]
+assert layout.weather("Oslo", fc, t0).width == 576
+planes = [{"callsign": "SAS78T", "alt": 594.0, "speed": 73.9, "heading": 55.2, "lat": 60.0, "lon": 10.8},
+          {"callsign": "FAR", "alt": None, "speed": None, "heading": None, "lat": 61.5, "lon": 10.8}]
+layout.to_rows(layout.radar("Oslo", 59.91, 10.75, planes, 40, t0))
+deps = [{"time": t0 + timedelta(minutes=i), "realtime": i % 2 == 0, "mode": "tram", "line": str(10 + i),
+         "dest": "Rikshospitalet via en veldig lang omvei gjennom hele byen", "platform": "C"} for i in range(5)]
+layout.to_rows(layout.departures("Jernbanetorget", deps, t0))
+m1, m2 = layout.maze(date(2026, 9, 30), t0), layout.maze(date(2026, 9, 30), t0)
+assert m1.tobytes() == m2.tobytes() and m1.tobytes() != layout.maze(date(2026, 10, 1), t0).tobytes()
+
+# keywords: short utterances only, fuzzy on long words, exact on short ones
+from main import command
+pw = ["pineapple", "ananas"]
+cases = {"Whether.": "weather", "Været.": "weather", "Pineapple": "chat", "Ananas!": "chat", "Skriv ute!": "print",
+         "Ha det bra.": "bye", "Print that": "print", "Fly": "flights", "Kunst": "art", "Neste trikken": "departures",
+         "Hvordan blir været i Bergen i morgen?": None, "i byen": None, "Hei": None}
+for said, want in cases.items():
+    assert command(said, pw) == want, (said, command(said, pw), want)
+
+# F615 LCD frames: page-major, one byte per column, LSB = top row of the page
+import phone
+img = Image.new("L", (128, 64), 255)
+for xy in ((0, 0), (0, 7), (1, 8), (127, 63)):
+    img.putpixel(xy, 0)
+f = phone.frame(img)
+assert len(f) == 1024 and f[0] == 0b1000_0001 and f[128 + 1] == 1 and f[1023] == 0x80 and sum(f) == 0x81 + 1 + 0x80
+assert layout.lcd("Løftet!", "æøå " * 40).size == (128, 64)
+
+# recipes: list, read, stay inside the collection, drafts never overwrite and always cite their source
+import tempfile
+from pathlib import Path
+import cookbook
+cookbook.ROOT = Path(tempfile.mkdtemp()).resolve()
+(cookbook.ROOT / "README.md").write_text("# not a recipe", encoding="utf-8")
+(cookbook.ROOT / "pannekaker.md").write_text("# Pannekaker\ntags: søtt\n\n## Ingredienser\n- 4 egg\n", encoding="utf-8")
+assert cookbook.list_recipes() == "pannekaker | Pannekaker | søtt"
+assert "4 egg" in cookbook.read_recipe("pannekaker") and cookbook.last.name == "pannekaker.md"
+for bad in ("../test_printer", "..\\x", "README.x", "nope"):
+    try:
+        cookbook.read_recipe(bad)
+        raise AssertionError(bad)
+    except ValueError:
+        pass
+assert cookbook.save_draft("Fiskesuppe fra Bergen!", "# Fiskesuppe\n- torsk", "https://x.no/a") == "Saved as drafts/fiskesuppe-fra-bergen"
+assert cookbook.save_draft("Fiskesuppe fra Bergen!", "# Fiskesuppe", "u") == "Saved as drafts/fiskesuppe-fra-bergen-2"
+assert "kilde: https://x.no/a" in cookbook.read_recipe("drafts/fiskesuppe-fra-bergen")
+assert "drafts/fiskesuppe-fra-bergen | Fiskesuppe |  | draft" in cookbook.list_recipes().splitlines()
+assert cookbook.read_recipe("drafts/fiskesuppe-fra-bergen").startswith("---\nkilde: https://x.no/a\n---\n\n# Fiskesuppe")
+cookbook.save_draft("Suppe", "---\ntid: 1 t\n---\n# Suppe", "https://y.no")
+assert cookbook.read_recipe("drafts/suppe").startswith("---\nkilde: https://y.no\ntid: 1 t\n---")
+(cookbook.ROOT / "_mal.md").write_text("# Mal\ntags: x", encoding="utf-8")
+assert "_mal" not in cookbook.list_recipes()
+
+# recipe format: front matter, groups, steps; prints as a kitchen card
+meta, title, intro, sections = layout.parse_recipe(
+    "---\nporsjoner: 4\ntid: 45 min\n---\n\n# Pannekaker\n\nTynne.\n\n## Ingredienser\n\n- 4 egg\n### Til servering\n"
+    "- syltetøy\n\n## Slik gjør du\n\n1. Visp.\n2) Stek.\n\n## Tips\nRøren holder.")
+assert meta == {"porsjoner": "4", "tid": "45 min"} and title == "Pannekaker" and intro == ["Tynne."]
+assert sections == [("Ingredienser", [("item", "4 egg"), ("sub", "Til servering"), ("item", "syltetøy")]),
+                    ("Slik gjør du", [("step", "Visp."), ("step", "Stek.")]), ("Tips", [("p", "Røren holder.")])]
+assert layout.parse_recipe("# Uten front matter\n## Ingredienser\n- salt")[1] == "Uten front matter"
+assert layout.is_recipe("# X\n\n## Ingredienser\n- a") and not layout.is_recipe("# Været\nIngredienser: sol")
+for recipe in (Path(__file__).parent / "recipes").glob("*.md"):  # the real collection, template included
+    layout.to_rows(layout.recipe(recipe.read_text(encoding="utf-8"), t0))
+
+# web page helpers: phone photos come out upright, previews are PNGs, no printer means no printing
+import io
+import web
+ph = Image.linear_gradient("L").resize((800, 600)).convert("RGB")
+exif = ph.getexif()
+exif[0x0112] = 6  # stored landscape, shot portrait
+buf = io.BytesIO()
+ph.save(buf, "JPEG", exif=exif)
+assert web.photo(buf.getvalue()).size == (576, 768)
+assert Image.open(io.BytesIO(web.render(layout.maze(date(2026, 9, 30), t0), False))).width == 576
+import qrcode
+lbl = layout.qr("http://192.168.0.216:8615", t0)
+code = qrcode.QRCode(border=0)
+code.add_data("http://192.168.0.216:8615")
+n = len(code.get_matrix())
+assert lbl.width == 576 and lbl.getpixel(((576 - n * 14) // 2 + 3, 64 + 34 + 48 + 56 + 3)) == 0  # top-left finder is black
+assert web.status() == {"state": "ingen skriver valgt", "level": "off"} and web.lan_ip().count(".") == 3
+assert web.recipes()[0]["name"] == "drafts/fiskesuppe-fra-bergen-2"  # cookbook.ROOT is the temp collection here
+try:
+    web.render(layout.maze(date(2026, 9, 30), t0), True)
+    raise AssertionError("printed without a printer")
+except ValueError as e:
+    assert "No printer" in str(e)
+
+import speak
+assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"
+assert speak.lang_of("It will be twelve degrees and light rain.") == "en"
+
+print("ok")
