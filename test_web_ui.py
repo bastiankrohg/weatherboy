@@ -82,6 +82,18 @@ with sync_playwright() as p:
                            " && document.querySelector('#paper img').naturalHeight > h", arg=before)
     text_ok = page.evaluate("() => current.a.includes('Ekstra linje fra testen')")
 
+    # short version and ingredients to the list, from the recipe opened above
+    full_h = page.eval_on_selector("#paper img", "i => i.naturalHeight")
+    page.click("#shortlong")
+    page.wait_for_function("h => current.kind === 'short' && document.querySelector('#paper img').naturalHeight !== h", arg=full_h)
+    short_h = page.eval_on_selector("#paper img", "i => i.naturalHeight")
+    page.click("#toshop")
+    page.wait_for_function("() => document.querySelectorAll('#shoplist li:not(.msg)').length > 0")
+    ingredients_added = page.evaluate("() => document.querySelectorAll('#shoplist li:not(.msg)').length")
+    page.click("#shopclear")  # nothing printed: stays
+    page.evaluate("() => shopPost({ remove: shop.map(it => it.id) })")
+    page.wait_for_function("() => document.querySelectorAll('#shoplist li:not(.msg)').length === 0")
+
     # shared shopping list: add two things, preview the printout with tick boxes
     page.fill("#shopinput", "melk, egg")
     page.press("#shopinput", "Enter")
@@ -102,5 +114,7 @@ print("ink pixels", inked, "-> undo ->", undone, "| rotated canvas", rotated, "|
 print("blank", blank, tool, "| page errors:", errors or "none")
 assert size == first and crop["y"] == 0 and crop["x"] == 0 and crop["w"] == size[0] and inked > 100 and undone == 0
 assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/api/image") and blank == [576, 800]
+print("short card", short_h, "px high | ingredients added", ingredients_added)
+assert short_h < full_h * 0.7 and ingredients_added >= 3
 assert tool == "pen" and text_ok and shop_ok and not errors
 print("editor ok")

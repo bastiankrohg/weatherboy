@@ -186,6 +186,9 @@ class Handler(BaseHTTPRequestHandler):
                 d = json.loads(body)
                 if d.get("remove"):
                     shoplist.remove(d["remove"])
+                elif d.get("from_recipe"):  # a recipe's ingredients onto the shared list
+                    for t in layout.ingredients(d["from_recipe"]):
+                        shoplist.add(t)
                 elif d.get("text"):
                     for t in d["text"].split(","):
                         if t.strip():
@@ -193,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(shoplist.items())
             elif url.path == "/api/text":  # everything printed from text: answers, recipes, lists
                 d = json.loads(body)
+                if d.get("kind") == "short":
+                    return self.receipt(layout.recipe_short(d["a"]), q)
                 if d.get("kind") == "shopping":
                     self.receipt(layout.recipe(d["a"], icon="shopping"), q)
                     if q.get("print") == "1":  # only once it's really on paper: "printet" on the page

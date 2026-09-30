@@ -85,6 +85,7 @@
   .shopactions { margin-top: 12px; align-items: center; }
   .check { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted); margin-right: auto; }
   .newrecipe { margin-top: 12px; }
+  #recipeactions { margin-top: 8px; }
   #recipeform { margin-top: 12px; }
   #recipetext { min-height: 320px; font: 13px/1.5 ui-monospace, Consolas, Menlo, monospace; }
   #recipeform .row { margin-top: 8px; justify-content: flex-end; }
@@ -207,6 +208,10 @@
         <p class="msg" id="length"></p>
         <div class="row"><button id="cancel">Avbryt</button><button class="primary" id="done">Bruk endringene</button></div>
       </div>
+      <div class="row" id="recipeactions" hidden>
+        <button id="shortlong">Kort versjon</button>
+        <button id="toshop">Legg ingrediensene i handlelisten</button>
+      </div>
       <p class="msg" id="msg"></p>
     </div>
     <div class="card">
@@ -247,6 +252,7 @@ async function preview(path, body = null, type = null, extra = {}) {
     $("#paper").append(img);
     $("#print").disabled = $("#edit").disabled = false;
     say("");
+    recipeActions();
     if (matchMedia("(max-width: 820px)").matches) $("#paper").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { say(e.message, true); }
 }
@@ -439,6 +445,21 @@ $("#saverecipe").onclick = async () => {
   say(`Lagret i ${d.name}.md.`);
 };
 
+// Recipes: switch between the full card and the short fridge version; send the ingredients to the shared list
+const isRecipe = text => /^## (Ingredienser|Ingredients)\s*$/im.test(text || "");
+function recipeActions() {
+  $("#recipeactions").hidden = !(current && isRecipe(current.a) && current.kind !== "shopping");
+  $("#shortlong").textContent = current?.kind === "short" ? "Full versjon" : "Kort versjon";
+}
+$("#shortlong").onclick = () => {
+  const { q, a, icon, recipe } = current, kind = current.kind === "short" ? undefined : "short";
+  preview("/api/text", JSON.stringify({ q, a, icon, kind }), "application/json", { q, a, icon, recipe, kind });
+};
+$("#toshop").onclick = async () => {
+  await shopPost({ from_recipe: current.a });
+  say("Ingrediensene ligger i handlelisten. Fjern det dere allerede har.");
+};
+
 // Recipes preview from their text, so the pencil can edit them (and save them back)
 async function openRecipe(name) {
   const r = await fetch("/api/recipe-text?name=" + encodeURIComponent(name));
@@ -467,7 +488,7 @@ $("#ask").onsubmit = async ev => {
     showSpent(d.spent);
     const again = Object.assign(document.createElement("button"), { textContent: d.recipe ? "Vis oppskriften" : "Vis kvittering" });
     // a recipe the answer read or drafted prints as its card, even if the model only described it
-    const show = d.recipe && !/^## (Ingredienser|Ingredients)\s*$/im.test(d.answer)
+    const show = d.recipe && !isRecipe(d.answer)
       ? () => openRecipe(d.recipe)
       : () => preview("/api/text", JSON.stringify({ q, a: d.answer, icon: d.icon }), "application/json",
                       { q, a: d.answer, icon: d.icon });

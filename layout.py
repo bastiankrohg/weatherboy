@@ -362,6 +362,57 @@ def recipe(text, when=None, icon=None):
     return img.crop((0, 0, DOTS, min(y + 8, MAX_H)))
 
 
+INGREDIENT_SECTIONS = ("ingredienser", "ingredients")
+
+
+def ingredients(text):
+    """The ingredient lines of a recipe, groups flattened: what goes on the shopping list."""
+    return [s for name, items in parse_recipe(text)[3] if name.lower() in INGREDIENT_SECTIONS
+            for kind, s in items if kind == "item"]
+
+
+def recipe_short(text, when=None):
+    """The fridge version: title and facts on one line, ingredients in two columns, steps as plain numbered
+    lines in smaller type. No intro, no tips: about half the paper of recipe()."""
+    meta, title, _, sections = parse_recipe(re.sub(r"\*\*(.+?)\*\*", r"\1", text))
+    small, body, bold, head = font(SANS, 18), font(SANS, 22), font(BOLD, 22), font(BOLD, 34)
+    img, d = _canvas()
+    drink = re.search(r"cocktail|drink|drikke|mocktail", meta.get("tags", ""), re.I)
+    y = _header(d, when, icon="cocktail" if drink else "cooking")
+    for line in wrap(title, head):
+        d.text((M, y), line, font=head, fill=0)
+        y += 40
+    facts = " · ".join(x for x in (meta.get("porsjoner") and f"{meta['porsjoner']} pors.", meta.get("tid")) if x)
+    if facts:
+        d.text((M, y + 2), facts, font=small, fill=0)
+        y += 26
+    y += 12
+    ingr = [e for name, items in sections if name.lower() in INGREDIENT_SECTIONS for e in items if e[0] in ("item", "sub")]
+    steps = [s for name, items in sections if name.lower() not in INGREDIENT_SECTIONS for k, s in items if k == "step"]
+    half, colw = (len(ingr) + 1) // 2, (COL - 16) // 2
+    bottom = y
+    for col, entries in enumerate((ingr[:half], ingr[half:])):  # two columns, left filled first
+        x, cy = M + col * (colw + 16), y
+        for kind, s in entries:
+            if kind == "sub":
+                d.text((x, cy + 4), s, font=bold, fill=0)
+                cy += 30
+                continue
+            d.rectangle((x + 1, cy + 6, x + 15, cy + 20), outline=0, width=2)
+            for line in wrap(s, body, colw - 24):
+                d.text((x + 24, cy), line, font=body, fill=0)
+                cy += 26
+        bottom = max(bottom, cy)
+    y = bottom + 14
+    for n, s in enumerate(steps, 1):
+        d.text((M, y), f"{n}.", font=bold, fill=0)
+        for line in wrap(s, body, COL - 32):
+            d.text((M + 32, y), line, font=body, fill=0)
+            y += 26
+        y += 4
+    return img.crop((0, 0, DOTS, min(y + 16, MAX_H)))
+
+
 def cloud(d, cx, top, width=200):
     """The web page's cloud icon (web.html), drawn for thermal paper: fill the union of three circles and the
     base black, then an inset copy white, leaving an outline of even weight with no seams. Returns the bottom y."""

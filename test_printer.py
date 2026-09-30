@@ -238,7 +238,18 @@ assert all(it["printed"] is None for it in shoplist.items())
 shoplist.mark_printed([1])
 assert shoplist.items()[0]["printed"] and shoplist.add("melk")["id"] == 4  # printed Melk: a new one may go on
 shoplist.remove([2, 3])
+
 assert [it["id"] for it in shoplist.items()] == [1, 4]
+
+# a recipe's ingredients onto the list (groups flattened); the short card is well under the full one
+pk = ("---\nporsjoner: 4\ntid: 45 min\n---\n# Pannekaker\n## Ingredienser\n- 4 egg\n### Til servering\n- syltetøy\n"
+      "## Slik gjør du\n1. Visp.\n2. Stek.\n## Tips\n- Rør godt.\n- Hvil røren.")
+assert layout.ingredients(pk) == ["4 egg", "syltetøy"]
+urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/shopping",
+                                              data=json.dumps({"from_recipe": pk}).encode(), method="POST"))
+assert {"4 egg", "syltetøy"} <= {it["text"] for it in shoplist.items()}
+_, short = call("/api/text", json.dumps({"kind": "short", "a": pk}).encode(), "application/json")
+assert short.width == 576 and short.height < layout.recipe(pk).height * 0.7
 landscape = io.BytesIO()
 raw.rotate(90, expand=True).save(landscape, "PNG")
 _, back = call("/api/image?dither=1", landscape.getvalue(), "image/png")
