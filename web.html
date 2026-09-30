@@ -74,6 +74,16 @@
   .qr img { width: 96px; height: 96px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
   .qr a { color: var(--ink); word-break: break-all; }
   .stops { margin-top: 8px; }
+  input[type=text] { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg);
+                     border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+  .shoplist { list-style: none; margin: 12px 0 0; padding: 0; }
+  .shoplist li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .shoplist li span:first-child { flex: 1; }
+  .shoplist .printed span:first-child { color: var(--muted); }
+  .shoplist .tag { font-size: 12px; color: var(--accent); white-space: nowrap; }
+  .shoplist button { border: 0; background: none; color: var(--muted); padding: 2px 8px; font-size: 18px; line-height: 1; }
+  .shopactions { margin-top: 12px; align-items: center; }
+  .check { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted); margin-right: auto; }
   .newrecipe { margin-top: 12px; }
   #recipeform { margin-top: 12px; }
   #recipetext { min-height: 320px; font: 13px/1.5 ui-monospace, Consolas, Menlo, monospace; }
@@ -113,6 +123,20 @@
         <button data-card="qr">QR-lapp til veggen</button>
       </div>
       <div class="row stops" id="stops"></div>
+    </div>
+
+    <div class="card">
+      <h2>Felles handleliste</h2>
+      <form id="shopadd" class="row">
+        <input type="text" id="shopinput" placeholder="Hva trenger vi? Flere med komma" autocomplete="off" aria-label="Ny vare">
+        <button class="primary">Legg til</button>
+      </form>
+      <ul class="shoplist" id="shoplist"></ul>
+      <div class="row shopactions">
+        <label class="check"><input type="checkbox" id="shopall"> Ta med printede</label>
+        <button id="shopclear">Fjern printede</button>
+        <button id="shopprint">Vis handlelisten</button>
+      </div>
     </div>
 
     <div class="card">
@@ -230,8 +254,11 @@ async function preview(path, body = null, type = null, extra = {}) {
 $("#print").onclick = async () => {
   $("#print").disabled = true;
   say("Skriver ut …");
-  try { await receipt(current.path, current.body, current.type, true); say("Skrevet ut ✓"); }
-  catch (e) { say(e.message, true); }
+  try {
+    await receipt(current.path, current.body, current.type, true);
+    say("Skrevet ut ✓");
+    if (current.kind === "shopping") loadShop();  // the server marked them "printet"
+  } catch (e) { say(e.message, true); }
   $("#print").disabled = false;
   refreshStatus();
 };
@@ -398,9 +425,9 @@ $("#done").onclick = () => {
 };
 $("#apply").onclick = () => {
   const a = $("#edittext").value;
-  const { q, icon, recipe } = current;
+  const { q, icon, recipe, kind, ids } = current;
   closeEditor();
-  preview("/api/text", JSON.stringify({ q, a, icon }), "application/json", { q, a, icon, recipe });
+  preview("/api/text", JSON.stringify({ q, a, icon, kind, ids }), "application/json", { q, a, icon, recipe, kind, ids });
 };
 $("#saverecipe").onclick = async () => {
   const r = await fetch("/api/recipes", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -539,7 +566,46 @@ async function loadStops() {
   });
 }
 
-refreshStatus(); setInterval(refreshStatus, 10000);
+// The shared shopping list: everyone on the WiFi edits the same list; printing marks what went on paper
+let shop = [];
+const fmt = iso => new Date(iso).toLocaleString("no", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+function renderShop() {
+  const list = $("#shoplist");
+  list.innerHTML = shop.length ? "" : '<li class="msg">Tom liste.</li>';
+  for (const it of shop) {
+    const li = document.createElement("li");
+    if (it.printed) li.className = "printed";
+    li.append(Object.assign(document.createElement("span"), { textContent: it.text }));
+    if (it.printed) li.append(Object.assign(document.createElement("span"), { className: "tag", textContent: "printet " + fmt(it.printed) }));
+    const x = Object.assign(document.createElement("button"), { textContent: "×", title: "Fjern", ariaLabel: "Fjern " + it.text });
+    x.onclick = () => shopPost({ remove: [it.id] });
+    li.append(x);
+    list.append(li);
+  }
+}
+async function shopPost(body) {
+  const r = await fetch("/api/shopping", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
+  const d = await r.json();
+  if (!r.ok) return say(d.error, true);
+  shop = d; renderShop();
+}
+async function loadShop() { try { shop = await (await fetch("/api/shopping")).json(); renderShop(); } catch {} }
+$("#shopadd").onsubmit = ev => {
+  ev.preventDefault();
+  const text = $("#shopinput").value.trim();
+  if (text) { shopPost({ text }); $("#shopinput").value = ""; }
+};
+$("#shopclear").onclick = () => shopPost({ remove: shop.filter(it => it.printed).map(it => it.id) });
+$("#shopprint").onclick = () => {
+  const entries = shop.filter(it => $("#shopall").checked || !it.printed);
+  if (!entries.length) return say("Ingenting nytt på listen. Huk av «Ta med printede» for å skrive ut alt.");
+  const a = "# Handleliste\n\n## Varer\n\n" + entries.map(it => "- " + it.text).join("\n") + "\n";
+  const ids = entries.map(it => it.id);
+  preview("/api/text", JSON.stringify({ kind: "shopping", a, ids }), "application/json", { a, kind: "shopping", ids });
+};
+
+refreshStatus(); setInterval(() => { refreshStatus(); loadShop(); }, 10000);
+loadShop();
 loadModels();
 loadStops();
 fetch("/api/url").then(r => r.json()).then(d => { const a = $("#url"); a.href = a.textContent = d.url; });

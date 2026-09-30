@@ -4,3 +4,4 @@ esp32/wifi.py
 recipes/
 .venv/
 .env
+data/

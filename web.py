@@ -23,6 +23,7 @@ import agent
 import cookbook
 import layout
 import printer
+import shoplist
 
 PORT = 8615
 MAX_UPLOAD = 25_000_000  # bytes; a big phone photo is ~10 MB
@@ -144,6 +145,8 @@ class Handler(BaseHTTPRequestHandler):
             tpl = cookbook.ROOT / "_mal.md"
             self.json({"markdown": tpl.read_text(encoding="utf-8") if tpl.exists() else
                        "---\nporsjoner: 4\ntid: \ntags: \nkilde: \n---\n\n# \n\n## Ingredienser\n\n- \n\n## Slik gjør du\n\n1. \n"})
+        elif path == "/api/shopping":
+            self.json(shoplist.items())
         elif path == "/api/stops":
             self.json([{"name": n, "mode": m} for n, m in agent.STOPS])
         elif path == "/api/models":
@@ -179,8 +182,22 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/model":
                 agent.set_model(json.loads(body)["model"])
                 self.json({"model": agent.model})
+            elif url.path == "/api/shopping":  # the shared list: {text} adds, {remove: [ids]} removes
+                d = json.loads(body)
+                if d.get("remove"):
+                    shoplist.remove(d["remove"])
+                elif d.get("text"):
+                    for t in d["text"].split(","):
+                        if t.strip():
+                            shoplist.add(t)
+                self.json(shoplist.items())
             elif url.path == "/api/text":  # everything printed from text: answers, recipes, lists
                 d = json.loads(body)
+                if d.get("kind") == "shopping":
+                    self.receipt(layout.recipe(d["a"], icon="shopping"), q)
+                    if q.get("print") == "1":  # only once it's really on paper: "printet" on the page
+                        shoplist.mark_printed(d.get("ids", []))
+                    return
                 self.receipt(layout.recipe(d["a"]) if layout.is_recipe(d["a"])
                              else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")), q)
             elif url.path == "/api/recipes":  # a recipe typed on the page, or an edited one saved back

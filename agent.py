@@ -10,6 +10,7 @@ import requests
 from anthropic import Anthropic, beta_tool
 
 import cookbook
+import shoplist
 
 
 def load_env(path=Path(__file__).with_name(".env")):
@@ -182,7 +183,8 @@ def flights(lat: float, lon: float, radius_km: float = 30) -> str:
 
 
 TOOLS = [beta_tool(weather), beta_tool(departures), beta_tool(flights),
-         beta_tool(cookbook.list_recipes), beta_tool(cookbook.read_recipe), beta_tool(cookbook.save_draft)]
+         beta_tool(cookbook.list_recipes), beta_tool(cookbook.read_recipe), beta_tool(cookbook.save_draft),
+         beta_tool(shoplist.add_to_shopping_list)]
 # Web tools are the easiest way to burn credit: $0.01 per search plus the result tokens, and a fetched page can
 # be tens of thousands of tokens. So: few uses, pages capped.
 WEB_LIMITS = {"search": {"max_uses": 2}, "fetch": {"max_uses": 2, "max_content_tokens": 4000}}

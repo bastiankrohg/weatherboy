@@ -219,6 +219,26 @@ try:
     raise AssertionError("read outside the collection")
 except urllib.error.HTTPError as e:
     assert e.code == 500 and "No recipe" in json.loads(e.read())["error"]
+# the shared shopping list: no duplicates while unprinted, removal, "printet" only after a real print
+import shoplist
+shoplist.FILE = Path(tempfile.mkdtemp()) / "data" / "handleliste.json"
+assert get("/api/shopping") == []
+lst = json.loads(urllib.request.urlopen(urllib.request.Request(
+    f"http://127.0.0.1:{srv.server_port}/api/shopping", data=json.dumps({"text": "Melk, brød,  melk "}).encode(),
+    method="POST")).read())
+assert [it["text"] for it in lst] == ["Melk", "brød"]
+assert "løk" in shoplist.add_to_shopping_list("2 løk, ")
+body = json.dumps({"kind": "shopping", "a": "# Handleliste\n\n## Varer\n\n- Melk\n", "ids": [1]}).encode()
+_, lbl = call("/api/text", body, "application/json")  # preview: nothing marked
+try:
+    call("/api/text?print=1", body, "application/json")  # no printer configured: the print fails
+except urllib.error.HTTPError as e:
+    assert e.code == 500
+assert all(it["printed"] is None for it in shoplist.items())
+shoplist.mark_printed([1])
+assert shoplist.items()[0]["printed"] and shoplist.add("melk")["id"] == 4  # printed Melk: a new one may go on
+shoplist.remove([2, 3])
+assert [it["id"] for it in shoplist.items()] == [1, 4]
 landscape = io.BytesIO()
 raw.rotate(90, expand=True).save(landscape, "PNG")
 _, back = call("/api/image?dither=1", landscape.getvalue(), "image/png")

@@ -7,8 +7,12 @@ import os
 
 from playwright.sync_api import sync_playwright
 
+import shoplist
+import tempfile
 import web
+from pathlib import Path
 
+shoplist.FILE = Path(tempfile.mkdtemp()) / "handleliste.json"  # never the flat's real list
 server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place
 B = f"http://127.0.0.1:{server.server_address[1]}"
 OUT = "out/"
@@ -78,6 +82,14 @@ with sync_playwright() as p:
                            " && document.querySelector('#paper img').naturalHeight > h", arg=before)
     text_ok = page.evaluate("() => current.a.includes('Ekstra linje fra testen')")
 
+    # shared shopping list: add two things, preview the printout with tick boxes
+    page.fill("#shopinput", "melk, egg")
+    page.press("#shopinput", "Enter")
+    page.wait_for_function("() => document.querySelectorAll('#shoplist li:not(.msg)').length === 2")
+    page.click("#shopprint")
+    page.wait_for_function("() => current && current.kind === 'shopping' && document.querySelector('#paper img')")
+    shop_ok = page.evaluate("() => current.ids.length === 2 && current.a.includes('- egg')")
+
     # blank sheet
     page.click("#blank")
     blank = page.eval_on_selector("#canvas", "c => [c.width, c.height]")
@@ -90,5 +102,5 @@ print("ink pixels", inked, "-> undo ->", undone, "| rotated canvas", rotated, "|
 print("blank", blank, tool, "| page errors:", errors or "none")
 assert size == first and crop["y"] == 0 and crop["x"] == 0 and crop["w"] == size[0] and inked > 100 and undone == 0
 assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/api/image") and blank == [576, 800]
-assert tool == "pen" and text_ok and not errors
+assert tool == "pen" and text_ok and shop_ok and not errors
 print("editor ok")

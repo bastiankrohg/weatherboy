@@ -302,13 +302,14 @@ def is_recipe(text):
     return re.search(r"^## (Ingredienser|Ingredients)\s*$", text, re.M | re.I) is not None
 
 
-def recipe(text, when=None):
-    """Kitchen card: tick boxes to check ingredients off with a pen, numbered circles for the steps."""
+def recipe(text, when=None, icon=None):
+    """Kitchen card: tick boxes to check ingredients off with a pen, numbered circles for the steps.
+    Shopping lists use it too (section "Varer", the bag icon)."""
     meta, title, intro, sections = parse_recipe(re.sub(r"\*\*(.+?)\*\*", r"\1", text))
     small, body, sub, head, num = font(SANS, 20), font(SANS, 28), font(BOLD, 26), font(BOLD, 44), font(BOLD, 20)
     img, d = _canvas()
     drink = re.search(r"cocktail|drink|drikke|mocktail", meta.get("tags", ""), re.I)
-    y = _header(d, when, icon="cocktail" if drink else "cooking")
+    y = _header(d, when, icon=icon or ("cocktail" if drink else "cooking"))
     for line in wrap(title, head):
         d.text((M, y), line, font=head, fill=0)
         y += 52
@@ -325,7 +326,7 @@ def recipe(text, when=None):
         y += 30
         d.text((M, y), name.upper(), font=small, fill=0)
         y += 30
-        boxes, n = name.lower() in ("ingredienser", "ingredients"), 0
+        boxes, n = name.lower() in ("ingredienser", "ingredients", "varer"), 0  # things to tick off with a pen
         for kind, s in items:
             if kind == "sub":
                 y += 8
@@ -439,8 +440,14 @@ def idea(d, x, y):  # a light bulb
     d.line((x + 20, y + 8, x + 22, y + 16, x + 24, y + 8), fill=0, width=2)
 
 
+def shopping(d, x, y):  # a carrier bag
+    d.rounded_rectangle((x + 8, y + 10, x + 36, y + 32), radius=3, outline=0, width=3)
+    d.arc((x + 14, y + 1, x + 30, y + 19), 180, 360, fill=0, width=3)
+
+
 ICONS = {"question": question, "cooking": cooking, "cocktail": cocktail, "weather": weather_icon,
-         "transport": transport, "flight": flight, "music": music, "idea": idea, "photo": camera}
+         "transport": transport, "flight": flight, "music": music, "idea": idea, "photo": camera,
+         "shopping": shopping}
 
 
 def photo(picture, when=None):
