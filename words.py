@@ -69,7 +69,7 @@ def generate(lang, seen):
     if not (agent.client.api_key or agent.client.auth_token):
         raise RuntimeError("Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py.")
     ask = (f"Word of the day for a thermal receipt on the wall: {LANGS[lang][1]}. English for meaning and "
-           f"example_meaning; kind: part of speech (short); note: one short line, may be empty. Keep every field "
+           f"example_meaning; kind: part of speech (short); note: one useful extra for a learner (a related word, a usage or grammar tip) or empty, never a remark about the word being useful or common. Keep every field "
            f"short enough for an 80 mm receipt. Pick something different from these recent ones: "
            f"{', '.join(seen) or 'none yet'}.")
     msg = agent.client.messages.create(model=MODEL, max_tokens=800, messages=[{"role": "user", "content": ask}],
