@@ -120,7 +120,12 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        try:
+            self._get(urlparse(self.path).path)
+        except Exception as e:  # e.g. an unknown recipe name: tell the page instead of dropping the connection
+            self.json({"error": f"{type(e).__name__}: {e}"}, 500)
+
+    def _get(self, path):
         if path == "/":
             self.reply(200, PAGE.read_bytes(), "text/html; charset=utf-8")
         elif path == "/api/status":
@@ -133,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, buf.getvalue(), "image/png")
         elif path == "/api/url":
             self.json({"url": URL})
+        elif path == "/api/recipe-text":
+            self.json({"markdown": cookbook.read_recipe(parse_qs(urlparse(self.path).query)["name"][0])})
         elif path == "/api/recipe-template":
             tpl = cookbook.ROOT / "_mal.md"
             self.json({"markdown": tpl.read_text(encoding="utf-8") if tpl.exists() else
@@ -172,12 +179,17 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/model":
                 agent.set_model(json.loads(body)["model"])
                 self.json({"model": agent.model})
-            elif url.path == "/api/answer":
+            elif url.path == "/api/text":  # everything printed from text: answers, recipes, lists
                 d = json.loads(body)
                 self.receipt(layout.recipe(d["a"]) if layout.is_recipe(d["a"])
                              else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")), q)
-            elif url.path == "/api/recipes":  # a recipe typed on the page
-                self.json({"name": cookbook.add(json.loads(body)["markdown"])})
+            elif url.path == "/api/recipes":  # a recipe typed on the page, or an edited one saved back
+                d = json.loads(body)
+                if d.get("name"):
+                    cookbook.update(d["name"], d["markdown"])
+                    self.json({"name": d["name"]})
+                else:
+                    self.json({"name": cookbook.add(d["markdown"])})
             elif url.path == "/api/photo":
                 self.receipt(photo(body), q, dither=True)
             elif url.path == "/api/image":  # the page's image editor: crops, rotations and drawings come back here
@@ -185,8 +197,6 @@ class Handler(BaseHTTPRequestHandler):
                 if img.width != layout.DOTS:  # rotated or drawn at another size: fit the paper width
                     img = img.resize((layout.DOTS, max(1, round(img.height * layout.DOTS / img.width))), Image.LANCZOS)
                 self.receipt(img, q, dither=q.get("dither") == "1")
-            elif url.path == "/api/recipe":
-                self.receipt(layout.recipe(cookbook.read_recipe(q["name"])), q)
             elif url.path == "/api/card/departures":  # ?stop= picks a board from agent.STOPS
                 stop = int(q.get("stop", 0))
                 if not 0 <= stop < len(agent.STOPS):

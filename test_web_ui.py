@@ -65,6 +65,19 @@ with sync_playwright() as p:
     path = page.evaluate("() => current.path")
     page.screenshot(path=OUT + "ui_after.png")
 
+    # text editor: a recipe from the list opens as text; editing it re-renders the card (not saved: real collection)
+    page.click(".recipes li button")
+    page.wait_for_function("() => current && current.recipe && document.querySelector('#paper img')")
+    before = page.eval_on_selector("#paper img", "i => i.naturalHeight")
+    page.click("#edit")
+    page.wait_for_selector("#edittext", state="visible")
+    assert page.is_visible("#saverecipe")
+    page.fill("#edittext", page.input_value("#edittext") + "\n\n## Tips\n\n- Ekstra linje fra testen.\n")
+    page.click("#apply")
+    page.wait_for_function("h => document.querySelector('#paper img') && !document.querySelector('#paper').hidden"
+                           " && document.querySelector('#paper img').naturalHeight > h", arg=before)
+    text_ok = page.evaluate("() => current.a.includes('Ekstra linje fra testen')")
+
     # blank sheet
     page.click("#blank")
     blank = page.eval_on_selector("#canvas", "c => [c.width, c.height]")
@@ -77,5 +90,5 @@ print("ink pixels", inked, "-> undo ->", undone, "| rotated canvas", rotated, "|
 print("blank", blank, tool, "| page errors:", errors or "none")
 assert size == first and crop["y"] == 0 and crop["x"] == 0 and crop["w"] == size[0] and inked > 100 and undone == 0
 assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/api/image") and blank == [576, 800]
-assert tool == "pen" and not errors
+assert tool == "pen" and text_ok and not errors
 print("editor ok")

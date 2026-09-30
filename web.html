@@ -165,7 +165,10 @@
       </div>
       <div class="editor" id="editor" hidden>
         <textarea id="edittext" hidden aria-label="Tekst som skrives ut"></textarea>
-        <div class="row" id="textrow" hidden><button id="apply">Oppdater teksten</button></div>
+        <div class="row" id="textrow" hidden>
+          <button id="apply">Oppdater kvitteringen</button>
+          <button id="saverecipe" hidden title="Skriv endringene tilbake til oppskriftsfilen">Lagre i oppskriften</button>
+        </div>
         <div class="tools" role="toolbar" aria-label="Bilderedigering">
           <button data-tool="crop" title="Dra et rektangel rundt det som skal med">Beskjær</button>
           <button data-tool="pen" title="Tegn med svart">Penn</button>
@@ -278,6 +281,7 @@ function showEditor() {
   $("#paper").hidden = editing;
   const isText = current?.a !== undefined;
   $("#edittext").hidden = $("#textrow").hidden = !isText;
+  $("#saverecipe").hidden = !current?.recipe;
   if (isText && $("#edittext").dataset.for !== current.a) { $("#edittext").value = current.a; $("#edittext").dataset.for = current.a; }
   if (editing) draw();
 }
@@ -394,10 +398,27 @@ $("#done").onclick = () => {
 };
 $("#apply").onclick = () => {
   const a = $("#edittext").value;
-  const { q, icon } = current;
+  const { q, icon, recipe } = current;
   closeEditor();
-  preview("/api/answer", JSON.stringify({ q, a, icon }), "application/json", { q, a, icon });
+  preview("/api/text", JSON.stringify({ q, a, icon }), "application/json", { q, a, icon, recipe });
 };
+$("#saverecipe").onclick = async () => {
+  const r = await fetch("/api/recipes", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ name: current.recipe, markdown: $("#edittext").value }) });
+  const d = await r.json();
+  if (!r.ok) return say(d.error, true);
+  $("#apply").click();
+  await loadRecipes();
+  say(`Lagret i ${d.name}.md.`);
+};
+
+// Recipes preview from their text, so the pencil can edit them (and save them back)
+async function openRecipe(name) {
+  const r = await fetch("/api/recipe-text?name=" + encodeURIComponent(name));
+  const d = await r.json();
+  if (!r.ok) return say(d.error, true);
+  return preview("/api/text", JSON.stringify({ q: "", a: d.markdown }), "application/json", { q: "", a: d.markdown, recipe: name });
+}
 
 document.querySelectorAll("[data-card]").forEach(b => b.onclick = () => preview("/api/card/" + b.dataset.card));
 
@@ -420,8 +441,8 @@ $("#ask").onsubmit = async ev => {
     const again = Object.assign(document.createElement("button"), { textContent: d.recipe ? "Vis oppskriften" : "Vis kvittering" });
     // a recipe the answer read or drafted prints as its card, even if the model only described it
     const show = d.recipe && !/^## (Ingredienser|Ingredients)\s*$/im.test(d.answer)
-      ? () => preview("/api/recipe?name=" + encodeURIComponent(d.recipe))
-      : () => preview("/api/answer", JSON.stringify({ q, a: d.answer, icon: d.icon }), "application/json",
+      ? () => openRecipe(d.recipe)
+      : () => preview("/api/text", JSON.stringify({ q, a: d.answer, icon: d.icon }), "application/json",
                       { q, a: d.answer, icon: d.icon });
     if (d.recipe) loadRecipes();
     again.onclick = show;
@@ -458,7 +479,7 @@ async function loadRecipes() {
       b.textContent = r.title;
       if (r.tags) b.append(Object.assign(document.createElement("small"), { textContent: r.tags }));
       if (r.draft) b.append(Object.assign(document.createElement("span"), { className: "draft", textContent: "utkast" }));
-      b.onclick = () => preview("/api/recipe?name=" + encodeURIComponent(r.name));
+      b.onclick = () => openRecipe(r.name);
       li.append(b); list.append(li);
     }
   } catch { list.innerHTML = '<li class="msg">Fant ikke oppskriftene.</li>'; }
@@ -479,7 +500,7 @@ $("#newrecipe").onclick = async () => {
 };
 $("#recipecancel").onclick = () => { $("#recipeform").hidden = true; $("#newrecipe").hidden = false; };
 $("#recipepreview").onclick = () =>
-  preview("/api/answer", JSON.stringify({ q: "", a: $("#recipetext").value }), "application/json");
+  preview("/api/text", JSON.stringify({ q: "", a: $("#recipetext").value }), "application/json");
 $("#recipesave").onclick = async () => {
   const r = await fetch("/api/recipes", { method: "POST", body: JSON.stringify({ markdown: $("#recipetext").value }),
                                           headers: { "Content-Type": "application/json" } });
@@ -487,7 +508,7 @@ $("#recipesave").onclick = async () => {
   if (!r.ok) return say(d.error, true);
   $("#recipetext").value = ""; $("#recipeform").hidden = true; $("#newrecipe").hidden = false;
   await loadRecipes();
-  await preview("/api/recipe?name=" + encodeURIComponent(d.name));
+  await openRecipe(d.name);
   say(`Lagret som ${d.name}.md i oppskriftene.`);
 };
 

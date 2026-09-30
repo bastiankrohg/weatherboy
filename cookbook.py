@@ -27,6 +27,13 @@ def list_recipes() -> str:
     return "\n".join(rows) or "The collection is empty."
 
 
+def _path(name):
+    p = (ROOT / f"{name}.md").resolve()
+    if not p.is_relative_to(ROOT) or not p.is_file():  # names come from the model or the page: stay inside
+        raise ValueError(f"No recipe called {name!r}. Use a name from list_recipes.")
+    return p
+
+
 def read_recipe(name: str) -> str:
     """Full text of one recipe from the user's collection.
 
@@ -34,11 +41,15 @@ def read_recipe(name: str) -> str:
         name: The name exactly as list_recipes shows it, e.g. "pannekaker" or "drafts/lasagne".
     """
     global last
-    p = (ROOT / f"{name}.md").resolve()
-    if not p.is_relative_to(ROOT) or not p.is_file():  # the name comes from the model: stay inside the collection
-        raise ValueError(f"No recipe called {name!r}. Use a name from list_recipes.")
-    last = p
-    return p.read_text(encoding="utf-8")
+    last = _path(name)
+    return last.read_text(encoding="utf-8")
+
+
+def update(name, markdown):
+    """Save an edited recipe over its file (from the page's text editor; git has the history)."""
+    if len(markdown) > 20_000:
+        raise ValueError("That's too long for a recipe.")
+    _path(name).write_text(markdown.strip() + "\n", encoding="utf-8")
 
 
 def save_draft(title: str, markdown: str, source_url: str) -> str:

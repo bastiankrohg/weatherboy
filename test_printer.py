@@ -194,7 +194,7 @@ except ValueError:
 
 # the editor's round trip, through a real server: raw hands out the grayscale original with its halftone mode;
 # an edited image (here rotated to landscape, so wider than the paper) comes back fitted to 576 dots
-import threading, urllib.request
+import json, threading, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer
 srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -206,6 +206,19 @@ hdr, raw = call("/api/photo?raw=1", buf.getvalue(), "image/jpeg")
 assert hdr["X-Dither"] == "1" and raw.width == 576 and len(set(raw.tobytes())) > 2  # grayscale, not yet dithered
 hdr, raw_txt = call("/api/card/art?raw=1")
 assert hdr["X-Dither"] == "0"
+# the text editor: recipes come out as text, go back in edited, and save over their file; bad names get an error
+get = lambda path: json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv.server_port}{path}").read())
+md = get("/api/recipe-text?name=negroni")["markdown"]
+assert md.startswith("# Negroni")
+_, card = call("/api/text", json.dumps({"q": "", "a": md + "\n- Campari"}).encode(), "application/json")
+assert card.width == 576
+cookbook.update("negroni", md + "\n- Campari")
+assert "Campari" in get("/api/recipe-text?name=negroni")["markdown"]
+try:
+    get("/api/recipe-text?name=../agent")
+    raise AssertionError("read outside the collection")
+except urllib.error.HTTPError as e:
+    assert e.code == 500 and "No recipe" in json.loads(e.read())["error"]
 landscape = io.BytesIO()
 raw.rotate(90, expand=True).save(landscape, "PNG")
 _, back = call("/api/image?dither=1", landscape.getvalue(), "image/png")
