@@ -58,10 +58,12 @@ def _canvas():
     return img, ImageDraw.Draw(img)
 
 
-def _header(d, when=None, label="WEATHERBOY"):
-    """Tracked-out small-caps label (the one place caps are allowed) and a timestamp. Returns the next y."""
+def _header(d, when=None, label="WEATHERBOY", icon=None):
+    """An icon (see ICONS) or a tracked-out small-caps label on the left, a timestamp on the right. -> next y."""
     small, x, y = font(SANS, 20), M, 64  # 8 mm above the first mark
-    for ch in label:
+    if icon:
+        ICONS.get(icon, ICONS["question"])(d, M, y - 8)
+    for ch in "" if icon else label:
         d.text((x, y), ch, font=small, fill=0)
         x += small.getlength(ch) + 4
     stamp = f"{when or datetime.now():%d.%m %H:%M}"
@@ -69,11 +71,20 @@ def _header(d, when=None, label="WEATHERBOY"):
     return y + 34
 
 
-def answer(question, text, when=None):
-    """Question small (provenance), answer big. ``` fences render as monospace art."""
+def theme(text):
+    """Split the model's "tema: cooking" first line off an answer -> (theme, rest). No tag: a question."""
+    first, _, rest = text.strip().partition("\n")
+    m = re.fullmatch(r"\W*tema\W*:\s*(\w+)\W*", first.strip(), re.I)
+    return (m[1].lower(), rest.strip()) if m and m[1].lower() in ICONS else ("question", text.strip())
+
+
+def answer(question, text, when=None, icon=None):
+    """Question small (provenance), answer big, theme icon on top. ``` fences render as monospace art."""
+    if icon is None:
+        icon, text = theme(text)
     small, body, sub, head = font(SANS, 20), font(SANS, 28), font(BOLD, 28), font(BOLD, 40)
     img, d = _canvas()
-    y = _header(d, when)
+    y = _header(d, when, icon=icon)
     for line in wrap(question, small):
         d.text((M, y), line, font=small, fill=0)
         y += 26
@@ -130,7 +141,7 @@ def weather(place, fc, when=None):
     """Now in big type, then the next hours as a curve (only high and low labelled) over a rain lane."""
     small, body = font(SANS, 20), font(SANS, 28)
     img, d = _canvas()
-    y = _header(d, when)
+    y = _header(d, when, icon="weather")
     d.text((M, y), place, font=font(BOLD, 40), fill=0)
     y += 56
     now, big = fc[0], font(BOLD, 110)
@@ -174,7 +185,7 @@ def departures(stop, deps, when=None):
     """Time, line number in a black sign, destination, minutes to go right-aligned."""
     body, sign, small = font(SANS, 28), font(BOLD, 24), font(SANS, 20)
     img, d = _canvas()
-    y = _header(d, when)
+    y = _header(d, when, icon="transport")
     d.text((M, y), stop, font=font(BOLD, 40), fill=0)
     y += 64
     now = datetime.now().astimezone()
@@ -201,7 +212,7 @@ def radar(place, lat, lon, planes, radius_km, when=None):
     """Aircraft as dots with heading ticks on range rings, north up, then a list."""
     small, row = font(SANS, 20), font(SANS, 24)
     img, d = _canvas()
-    y = _header(d, when)
+    y = _header(d, when, icon="flight")
     d.text((M, y), f"Over {place}", font=font(BOLD, 40), fill=0)
     y += 72
     r, cx = COL // 2, DOTS // 2
@@ -296,7 +307,8 @@ def recipe(text, when=None):
     meta, title, intro, sections = parse_recipe(re.sub(r"\*\*(.+?)\*\*", r"\1", text))
     small, body, sub, head, num = font(SANS, 20), font(SANS, 28), font(BOLD, 26), font(BOLD, 44), font(BOLD, 20)
     img, d = _canvas()
-    y = _header(d, when, "OPPSKRIFT")
+    drink = re.search(r"cocktail|drink|drikke|mocktail", meta.get("tags", ""), re.I)
+    y = _header(d, when, icon="cocktail" if drink else "cooking")
     for line in wrap(title, head):
         d.text((M, y), line, font=head, fill=0)
         y += 52
@@ -349,8 +361,101 @@ def recipe(text, when=None):
     return img.crop((0, 0, DOTS, min(y + 8, MAX_H)))
 
 
+def cloud(d, cx, top, width=200):
+    """The web page's cloud icon (web.html), drawn for thermal paper: fill the union of three circles and the
+    base black, then an inset copy white, leaving an outline of even weight with no seams. Returns the bottom y."""
+    k = width / 64  # the SVG's 64-unit viewBox; the cloud spans x 5.5..59, y 2..36 in it
+    ox, oy, stroke = cx - 32 * k, top - 2 * k, 3.5  # stroke in viewBox units, same as the page
+    for inset, fill in ((0, 0), (stroke, 255)):
+        for x, y, r in ((18, 23.5, 12.5), (35, 17, 15), (48, 25, 11)):
+            d.ellipse((ox + (x - r + inset) * k, oy + (y - r + inset) * k,
+                       ox + (x + r - inset) * k, oy + (y + r - inset) * k), fill=fill)
+        d.rectangle((ox + 18 * k, oy + 23.5 * k, ox + 48 * k, oy + (36 - inset) * k), fill=fill)
+    return oy + 36 * k
+
+
+def camera(d, x, y):
+    """A 44 x 32 dot camera, 3-dot strokes (thinner prints grey and patchy)."""
+    d.polygon([(x + 13, y + 7), (x + 16, y), (x + 28, y), (x + 31, y + 7)], fill=0)  # viewfinder hump
+    d.rounded_rectangle((x, y + 6, x + 44, y + 32), radius=5, outline=0, width=3)
+    d.ellipse((x + 14, y + 11, x + 30, y + 27), outline=0, width=3)  # lens
+    d.ellipse((x + 35, y + 10, x + 39, y + 14), fill=0)  # flash
+
+
+def question(d, x, y):
+    d.ellipse((x + 6, y, x + 38, y + 32), outline=0, width=3)
+    d.text((x + 22, y + 17), "?", font=font(BOLD, 24), fill=0, anchor="mm")
+
+
+def cooking(d, x, y):  # a pot with a lid
+    d.rounded_rectangle((x + 6, y + 13, x + 38, y + 32), radius=4, outline=0, width=3)
+    d.line((x + 2, y + 10, x + 42, y + 10), fill=0, width=3)
+    d.rectangle((x + 18, y + 4, x + 26, y + 8), fill=0)
+    d.line((x, y + 17, x + 6, y + 17), fill=0, width=3)
+    d.line((x + 38, y + 17, x + 44, y + 17), fill=0, width=3)
+
+
+def cocktail(d, x, y):  # a martini glass with an olive
+    d.polygon([(x + 7, y + 1), (x + 37, y + 1), (x + 22, y + 17)], outline=0, width=3)
+    d.line((x + 22, y + 17, x + 22, y + 29), fill=0, width=3)
+    d.line((x + 13, y + 30, x + 31, y + 30), fill=0, width=3)
+    d.line((x + 26, y - 2, x + 18, y + 9), fill=0, width=2)
+    d.ellipse((x + 15, y + 6, x + 22, y + 13), fill=0)
+
+
+def weather_icon(d, x, y):
+    cloud(d, x + 22, y + 2, width=44)
+
+
+def transport(d, x, y):  # a train, head on
+    d.rounded_rectangle((x + 10, y, x + 34, y + 26), radius=5, outline=0, width=3)
+    d.rectangle((x + 15, y + 5, x + 29, y + 13), outline=0, width=3)
+    d.ellipse((x + 14, y + 17, x + 18, y + 21), fill=0)
+    d.ellipse((x + 26, y + 17, x + 30, y + 21), fill=0)
+    d.line((x + 14, y + 26, x + 9, y + 32), fill=0, width=3)
+    d.line((x + 30, y + 26, x + 35, y + 32), fill=0, width=3)
+
+
+def flight(d, x, y):  # a plane from above, nose right
+    d.rounded_rectangle((x + 3, y + 14, x + 42, y + 18), radius=2, fill=0)
+    d.polygon([(x + 22, y + 15), (x + 14, y + 1), (x + 19, y + 1), (x + 32, y + 15)], fill=0)  # swept back
+    d.polygon([(x + 22, y + 17), (x + 14, y + 31), (x + 19, y + 31), (x + 32, y + 17)], fill=0)
+    d.polygon([(x + 3, y + 15), (x + 6, y + 7), (x + 10, y + 7), (x + 10, y + 15)], fill=0)
+    d.polygon([(x + 3, y + 17), (x + 6, y + 25), (x + 10, y + 25), (x + 10, y + 17)], fill=0)
+
+
+def music(d, x, y):  # two beamed eighth notes
+    d.ellipse((x + 6, y + 23, x + 16, y + 31), fill=0)
+    d.ellipse((x + 26, y + 20, x + 36, y + 28), fill=0)
+    d.line((x + 15, y + 27, x + 15, y + 5), fill=0, width=3)
+    d.line((x + 35, y + 24, x + 35, y + 2), fill=0, width=3)
+    d.polygon([(x + 14, y + 4), (x + 36, y + 1), (x + 36, y + 6), (x + 14, y + 9)], fill=0)
+
+
+def idea(d, x, y):  # a light bulb
+    d.ellipse((x + 11, y, x + 33, y + 22), outline=0, width=3)
+    d.line((x + 17, y + 24, x + 27, y + 24), fill=0, width=3)
+    d.line((x + 18, y + 29, x + 26, y + 29), fill=0, width=3)
+    d.line((x + 20, y + 8, x + 22, y + 16, x + 24, y + 8), fill=0, width=2)
+
+
+ICONS = {"question": question, "cooking": cooking, "cocktail": cocktail, "weather": weather_icon,
+         "transport": transport, "flight": flight, "music": music, "idea": idea, "photo": camera}
+
+
+def photo(picture, when=None):
+    """A dithered photo, full bleed, under a camera icon (left) and when it was printed (right)."""
+    small = font(SANS, 20)
+    img, d = _canvas()
+    camera(d, M, 24)
+    stamp = f"{when or datetime.now():%d.%m.%Y %H:%M}"
+    d.text((DOTS - M - small.getlength(stamp), 30), stamp, font=small, fill=0)
+    img.paste(picture, (0, 72))
+    return img.crop((0, 0, DOTS, min(72 + picture.height + 8, MAX_H)))
+
+
 def qr(url, when=None):
-    """A wall label: the web page's address as a QR code, big enough to scan from across the hallway."""
+    """A wall label: the cloud, the web page's address as a QR code, and the address in text."""
     import qrcode
     code = qrcode.QRCode(border=0, error_correction=qrcode.constants.ERROR_CORRECT_M)
     code.add_data(url)
@@ -359,20 +464,16 @@ def qr(url, when=None):
     n = len(matrix)
     s = max(1, min(14, COL // n))  # whole dots per module: fractional scaling gives ragged, unscannable edges
     img, d = _canvas()
-    y = _header(d, when)
-    title = "Weatherboy på nett"
-    d.text(((DOTS - font(BOLD, 40).getlength(title)) / 2, y), title, font=font(BOLD, 40), fill=0)
-    y += 48 + 4 * s  # a four-module quiet zone above the code
+    y = round(cloud(d, DOTS / 2, 48)) + 4 * s  # a four-module quiet zone above the code
     x0 = (DOTS - n * s) // 2
     for r, row in enumerate(matrix):
         for c, dark in enumerate(row):
             if dark:
                 d.rectangle((x0 + c * s, y + r * s, x0 + (c + 1) * s - 1, y + (r + 1) * s - 1), fill=0)
     y += n * s + 4 * s
-    for text, f in ((url, font(SANS, 26)), ("Skann for å spørre, printe bilder og oppskrifter", font(SANS, 20))):
-        d.text(((DOTS - f.getlength(text)) / 2, y), text, font=f, fill=0)
-        y += 36
-    return img.crop((0, 0, DOTS, y + 8))
+    f = font(SANS, 26)
+    d.text(((DOTS - f.getlength(url)) / 2, y), url, font=f, fill=0)
+    return img.crop((0, 0, DOTS, y + 44))
 
 
 def lcd(title, text="", size=16, w=128, h=64):

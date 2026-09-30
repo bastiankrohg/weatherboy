@@ -24,7 +24,7 @@ import web
 
 COMMANDS = {  # short utterances (1-3 words) that skip Claude. NB-Whisper writes English words in Norwegian.
     "weather": ["weather", "vær", "været", "værmelding", "yr"],
-    "departures": ["departures", "avganger", "avgang", "trikken", "bussen", "tram", "bus"],
+    "departures": ["departures", "avganger", "avgang", "tog", "toget", "train", "trikken", "bussen", "tram", "bus"],
     "flights": ["flights", "planes", "fly", "flyene", "radar"],
     "art": ["art", "kunst", "labyrint", "maze"],
     "print": ["skriv ut", "print"],
@@ -147,8 +147,8 @@ def main():
                     tone(speak.BUSY)
                     chat = False
                 else:
-                    ans = agent.ask(q, voice=True)
-                    print(ans, "\n")
+                    ans, dollars = agent.ask(q, voice=True)
+                    print(f"{ans}\n[~${dollars:.4f}, ${agent.spent:.4f} since start]\n")
                     last = (q, ans)
                     show("Weatherboy", ans)
                     say(ans)
@@ -159,10 +159,16 @@ def main():
             elif cmd in web.CARDS:  # weather, departures, flights, art
                 out(web.CARDS[cmd]())
             elif len(q.split()) >= 2:  # ponytail: drops coughs and whisper's one-word hallucinations
-                ans = agent.ask(q)
-                print(ans, "\n")
-                last = (q, ans)
-                out(layout.recipe(ans) if layout.is_recipe(ans) else layout.answer(q, ans))
+                ans, dollars = agent.ask(q)
+                print(f"{ans}\n[~${dollars:.4f}, ${agent.spent:.4f} since start]\n")
+                icon, ans = layout.theme(ans)  # the "tema: x" line becomes the receipt's icon
+                last = (q, ans, None, icon)    # layout.answer(question, text, when, icon), for "skriv ut"
+                if layout.is_recipe(ans):
+                    out(layout.recipe(ans))
+                elif cookbook.last:  # it read or drafted a recipe but only talked about it: print the recipe itself
+                    out(layout.recipe(cookbook.last.read_text(encoding="utf-8")))
+                else:
+                    out(layout.answer(q, ans, icon=icon))
         except (KeyboardInterrupt, EOFError):
             break
         except Exception as e:  # keep the handset alive; one bad API call shouldn't kill the loop

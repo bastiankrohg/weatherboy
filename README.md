@@ -54,7 +54,7 @@ stateDiagram-v2
 | Say | You get |
 |---|---|
 | `vær` · `weather` · `yr` | Weather card: now, 24 h temperature curve, rain bars |
-| `trikken` · `bussen` · `avganger` | Departure board for `WEATHERBOY_STOP` |
+| `trikken` · `bussen` · `avganger` | Departure board for the first of `WEATHERBOY_STOPS` (default: trains from Oslo S; the page also offers Jakob kirke and Jernbanetorget) |
 | `fly` · `radar` · `planes` | Radar plot of aircraft within 40 km |
 | `kunst` · `art` | Today's 10 PRINT or Truchet maze (same date, same print) |
 | `skriv ut` · `print that` | Reprint the last answer |
@@ -142,13 +142,21 @@ The swap-in module speaks the same protocol, so nothing changes on the host.
 
 ## Setup
 
+**You need your own Claude API key.** Get one at [console.anthropic.com](https://console.anthropic.com), then create a file called `.env` next to `agent.py` containing:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+`.env` is git-ignored, so the key never ends up in the repo. Without it, the keyword receipts, photos and recipes still work, but chat and phone calls don't.
+
 ```mermaid
 flowchart TD
     Start{Platform} --> Win["Windows / Mac"]
     Start --> Pi["Raspberry Pi 4/5, 64-bit Pi OS<br/>sudo apt install libportaudio2"]
     Win & Pi --> UV["install uv: docs.astral.sh/uv"]
     UV --> Req["uv sync<br/>fetches Python and every dependency;<br/>Intel Macs get the older ctranslate2 automatically"]
-    Req --> Key["set ANTHROPIC_API_KEY<br/>optional: WEATHERBOY_PLACE, _LATLON, _STOP, _UA, _RECIPES"]
+    Req --> Key[".env next to agent.py (git-ignored):<br/>ANTHROPIC_API_KEY=sk-ant-...<br/>optional: WEATHERBOY_PLACE, _LATLON, _STOPS, _UA, _RECIPES, _MODEL"]
     Key --> Check["uv run test_printer.py"]
 ```
 

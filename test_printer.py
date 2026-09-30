@@ -116,14 +116,17 @@ exif = ph.getexif()
 exif[0x0112] = 6  # stored landscape, shot portrait
 buf = io.BytesIO()
 ph.save(buf, "JPEG", exif=exif)
-assert web.photo(buf.getvalue()).size == (576, 768)
+pic = web.photo(buf.getvalue())
+assert pic.size == (576, 72 + 768 + 8) and pic.getpixel((layout.M + 22, 24)) == 0  # upright, camera hump inked
 assert Image.open(io.BytesIO(web.render(layout.maze(date(2026, 9, 30), t0), False))).width == 576
 import qrcode
 lbl = layout.qr("http://192.168.0.216:8615", t0)
 code = qrcode.QRCode(border=0)
 code.add_data("http://192.168.0.216:8615")
 n = len(code.get_matrix())
-assert lbl.width == 576 and lbl.getpixel(((576 - n * 14) // 2 + 3, 64 + 34 + 48 + 56 + 3)) == 0  # top-left finder is black
+x = (576 - n * 14) // 2 + 3  # through the QR's left finder pattern, left of the cloud
+top = next(y for y in range(lbl.height) if lbl.getpixel((x, y)) == 0)
+assert lbl.width == 576 and all(lbl.getpixel((x, top + i)) == 0 for i in range(7 * 14))  # finder: 7 black modules
 assert web.status() == {"state": "ingen skriver valgt", "level": "off"} and web.lan_ip().count(".") == 3
 assert web.recipes()[0]["name"] == "drafts/fiskesuppe-fra-bergen-2"  # cookbook.ROOT is the temp collection here
 try:
@@ -131,6 +134,70 @@ try:
     raise AssertionError("printed without a printer")
 except ValueError as e:
     assert "No printer" in str(e)
+
+# user-written recipes go straight into the collection; no title, no save
+assert cookbook.add("# Negroni\ntags: cocktail\n\n## Ingredienser\n- gin") == "negroni"
+assert cookbook.add("# Negroni\n") == "negroni-2" and "negroni | Negroni | cocktail" in cookbook.list_recipes()
+try:
+    cookbook.add("bare tekst")
+    raise AssertionError("saved a recipe without a title")
+except ValueError:
+    pass
+
+# themes: the model's "tema:" line picks the icon and is dropped from the text; recipes pick their own
+assert layout.theme("tema: cocktail\n# Negroni") == ("cocktail", "# Negroni")
+assert layout.theme("**Tema: Idea**\nLys er raskt.") == ("idea", "Lys er raskt.")
+assert layout.theme("tema: dinosaur\nx") == ("question", "tema: dinosaur\nx") and layout.theme("Hei") == ("question", "Hei")
+top = lambda img: img.crop((layout.M, 50, layout.M + 50, 95)).tobytes()  # the icon's corner of the header
+assert top(layout.answer("q", "tema: cocktail\nx", t0)) == top(layout.answer("q", "x", t0, icon="cocktail"))
+assert top(layout.answer("q", "x", t0, icon="cocktail")) != top(layout.answer("q", "x", t0))
+assert top(layout.recipe("---\ntags: cocktail\n---\n# N\n## Ingredienser\n- gin", t0)) == top(
+    layout.answer("q", "x", t0, icon="cocktail"))
+for name in layout.ICONS:
+    layout.to_rows(layout.answer("q", "x", t0, icon=name))
+
+# settings: .env fills in what the real environment doesn't set; no key gives a clear message
+import os
+import agent
+env = Path(tempfile.mkdtemp()) / ".env"
+env.write_text('# comment\nWB_TEST_A = "one"\nWB_TEST_B=two=2\nnot a setting\n', encoding="utf-8")
+os.environ["WB_TEST_B"] = "from the shell"
+agent.load_env(env)
+assert os.environ["WB_TEST_A"] == "one" and os.environ["WB_TEST_B"] == "from the shell"
+if not (agent.client.api_key or agent.client.auth_token):
+    try:
+        agent.ask("hei")
+        raise AssertionError("asked Claude without a key")
+    except RuntimeError as e:
+        assert "ANTHROPIC_API_KEY" in str(e)
+
+# models: Haiku by default, each model gets only settings it accepts; cost maths; switching starts fresh
+from types import SimpleNamespace as NS
+assert agent.model == os.environ.get("WEATHERBOY_MODEL", "claude-haiku-4-5")
+hk, op = agent.params("claude-haiku-4-5"), agent.params("claude-opus-5-5")
+assert "output_config" not in hk and "thinking" not in hk and "fallbacks" not in hk
+assert {t["type"] for t in hk["tools"] if isinstance(t, dict)} == {"web_search_20250305", "web_fetch_20250910"}
+assert op["output_config"] == {"effort": "low"} and {t["type"] for t in op["tools"] if isinstance(t, dict)} == {
+    "web_search_20260209", "web_fetch_20260209"}
+u = NS(input_tokens=1_000_000, output_tokens=100_000, cache_creation_input_tokens=0, cache_read_input_tokens=1_000_000,
+       server_tool_use=NS(web_search_requests=2))
+assert abs(agent.cost("claude-haiku-4-5", u) - (1 + 0.5 + 0.1 + 0.02)) < 1e-9
+agent.history = [{"role": "user", "content": "x"}]
+agent.set_model("claude-sonnet-5-5")
+assert agent.model == "claude-sonnet-5-5" and agent.history == []
+agent.set_model("claude-haiku-4-5")
+try:
+    agent.set_model("gpt-9")
+    raise AssertionError("accepted an unknown model")
+except ValueError:
+    pass
+
+# cropping: start and cut lines keep only those rows; out-of-range values are clamped
+tall = layout.maze(date(2026, 9, 30), t0)
+cut = Image.open(io.BytesIO(web.render(tall, False, 100, 300)))
+assert cut.size == (576, 200) and cut.tobytes() == tall.crop((0, 100, 576, 300)).convert("1").convert("L").tobytes()
+assert Image.open(io.BytesIO(web.render(tall, False, -5, 99999))).height == tall.height
+assert agent.STOPS[0] == ("Oslo S", "rail") if "WEATHERBOY_STOPS" not in os.environ else True
 
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"

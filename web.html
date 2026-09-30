@@ -71,6 +71,27 @@
   .qr { display: flex; gap: 12px; align-items: center; font-size: 14px; color: var(--muted); }
   .qr img { width: 96px; height: 96px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
   .qr a { color: var(--ink); word-break: break-all; }
+  .stops { margin-top: 8px; }
+  .newrecipe { margin-top: 12px; }
+  #recipeform { margin-top: 12px; }
+  #recipetext { min-height: 320px; font: 13px/1.5 ui-monospace, Consolas, Menlo, monospace; }
+  #recipeform .row { margin-top: 8px; justify-content: flex-end; }
+  .model { align-items: center; margin-top: 10px; font-size: 14px; color: var(--muted); }
+  select { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+           border-radius: 8px; padding: 6px 8px; }
+  .log .cost { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .actions .icon { flex: 0 0 auto; padding: 9px 11px; line-height: 0; }
+  .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+  .icon[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .paper.editing { position: relative; touch-action: none; }
+  .shade { position: absolute; left: 0; right: 0; background: rgb(30 27 23 / .55); pointer-events: none; }
+  .handle { position: absolute; left: 0; right: 0; height: 28px; margin-top: -14px; cursor: ns-resize; }
+  .handle::before { content: ""; position: absolute; left: 0; right: 0; top: 13px; border-top: 2px dashed var(--accent); }
+  .handle span { position: absolute; right: 6px; top: 2px; font: 600 11px/1 system-ui, sans-serif; color: #fff;
+                 background: var(--accent); border-radius: 4px; padding: 4px 6px; }
+  .editor { margin-top: 10px; }
+  .editor textarea { min-height: 160px; font-size: 14px; }
+  .editor .row { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -84,11 +105,11 @@
       <h2>Kvitteringer</h2>
       <div class="row">
         <button data-card="weather">Været</button>
-        <button data-card="departures">Avganger</button>
         <button data-card="flights">Fly over oss</button>
         <button data-card="art">Dagens kunst</button>
         <button data-card="qr">QR-lapp til veggen</button>
       </div>
+      <div class="row stops" id="stops"></div>
     </div>
 
     <div class="card">
@@ -97,6 +118,10 @@
         <textarea name="q" placeholder="Hvordan blir været i helgen? Har vi en oppskrift på fiskesuppe?"></textarea>
         <div class="row"><button class="primary">Spør</button></div>
       </form>
+      <div class="row model">
+        <label>Modell <select id="model"></select></label>
+        <span id="spent"></span>
+      </div>
       <div class="log" id="log"></div>
     </div>
 
@@ -110,6 +135,15 @@
     <div class="card">
       <h2>Oppskrifter</h2>
       <ul class="recipes" id="recipes"><li class="msg">Henter …</li></ul>
+      <div class="row newrecipe"><button id="newrecipe">+ Ny oppskrift</button></div>
+      <div id="recipeform" hidden>
+        <textarea id="recipetext" aria-label="Ny oppskrift" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="recipecancel">Avbryt</button>
+          <button id="recipepreview">Forhåndsvis</button>
+          <button class="primary" id="recipesave">Lagre</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -117,7 +151,17 @@
     <div class="card">
       <h2>Forhåndsvisning</h2>
       <div class="paper" id="paper"><p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk.</p></div>
-      <div class="actions"><button class="primary" id="print" disabled>Skriv ut</button></div>
+      <div class="actions">
+        <button class="primary" id="print" disabled>Skriv ut</button>
+        <button class="icon" id="edit" disabled aria-pressed="false" title="Rediger: flytt start og klipp, endre tekst" aria-label="Rediger">
+          <svg viewBox="0 0 24 24"><path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M13.5 6.5l4 4"/></svg>
+        </button>
+      </div>
+      <div class="editor" id="editor" hidden>
+        <p class="msg" id="length"></p>
+        <textarea id="edittext" hidden aria-label="Tekst som skrives ut"></textarea>
+        <div class="row"><button id="apply" hidden>Oppdater teksten</button><button id="reset">Nullstill klipp</button></div>
+      </div>
       <p class="msg" id="msg"></p>
     </div>
     <div class="card">
@@ -130,27 +174,37 @@
 <script>
 const $ = s => document.querySelector(s);
 let current = null;  // the request behind the preview; "Skriv ut" repeats it with print=1
+let crop = null;     // {top, bottom, h} in printer dots (8 per mm): what's kept when printing
+let editing = false;
 
 function say(text, bad = false) { const m = $("#msg"); m.textContent = text; m.classList.toggle("bad", bad); }
 
 async function receipt(path, body = null, type = null, print = false) {
-  const url = print ? path + (path.includes("?") ? "&" : "?") + "print=1" : path;
+  const params = new URLSearchParams();
+  if (print) params.set("print", "1");
+  if (print && crop && (crop.top > 0 || crop.bottom < crop.h)) { params.set("top", crop.top); params.set("bottom", crop.bottom); }
+  const url = params.size ? path + (path.includes("?") ? "&" : "?") + params : path;
   const r = await fetch(url, { method: "POST", body, headers: type ? { "Content-Type": type } : {} });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
   return URL.createObjectURL(await r.blob());
 }
 
-async function preview(path, body = null, type = null) {
-  current = { path, body, type };
-  $("#print").disabled = true;
+// current.q / current.a are set for Claude's answers: those are the ones with editable text
+async function preview(path, body = null, type = null, extra = {}) {
+  current = { path, body, type, ...extra };
+  $("#print").disabled = $("#edit").disabled = true;
   say("Lager forhåndsvisning …");
   try {
     const src = await receipt(path, body, type);
     if (current?.path !== path || current.body !== body) return;  // a newer preview won
+    const img = Object.assign(new Image(), { src, alt: "Forhåndsvisning av kvitteringen" });
+    await img.decode();
     $("#paper").innerHTML = "";
-    $("#paper").append(Object.assign(new Image(), { src, alt: "Forhåndsvisning av kvitteringen" }));
-    $("#print").disabled = false;
+    $("#paper").append(img);
+    crop = { top: 0, bottom: img.naturalHeight, h: img.naturalHeight };
+    $("#print").disabled = $("#edit").disabled = false;
     say("");
+    showEditor();
     if (matchMedia("(max-width: 820px)").matches) $("#paper").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { say(e.message, true); }
 }
@@ -163,6 +217,60 @@ $("#print").onclick = async () => {
   $("#print").disabled = false;
   refreshStatus();
 };
+
+// Editing: two draggable lines on the preview (start, and where the cutter cuts), and the text of Claude's answers.
+$("#edit").onclick = () => { editing = !editing; showEditor(); };
+
+function showEditor() {
+  $("#edit").setAttribute("aria-pressed", editing);
+  $("#editor").hidden = !editing || !crop;
+  const paper = $("#paper");
+  paper.classList.toggle("editing", editing && !!crop);
+  paper.querySelectorAll(".shade, .handle").forEach(el => el.remove());
+  const isText = current?.a !== undefined;
+  $("#edittext").hidden = $("#apply").hidden = !isText;
+  if (isText && $("#edittext").dataset.for !== current.a) { $("#edittext").value = current.a; $("#edittext").dataset.for = current.a; }
+  if (!editing || !crop) return;
+  const shadeTop = Object.assign(document.createElement("div"), { className: "shade" });
+  const shadeBottom = Object.assign(document.createElement("div"), { className: "shade" });
+  const start = handle("start"), cut = handle("✂ klipp her");
+  paper.append(shadeTop, shadeBottom, start, cut);
+  const scale = () => paper.querySelector("img").clientHeight / crop.h;  // screen px per printer dot
+  function place() {
+    const s = scale();
+    start.style.top = crop.top * s + "px";
+    cut.style.top = crop.bottom * s + "px";
+    Object.assign(shadeTop.style, { top: 0, height: crop.top * s + "px" });
+    Object.assign(shadeBottom.style, { top: crop.bottom * s + "px", bottom: 0 });
+    $("#length").textContent = `Papir: ${Math.round((crop.bottom - crop.top) / 8)} mm (pluss ca. 15 mm fram til kutteren). Dra linjene for å flytte start og klipp.`;
+  }
+  drag(start, y => { crop.top = Math.max(0, Math.min(y / scale(), crop.bottom - 40)); place(); });
+  drag(cut, y => { crop.bottom = Math.min(crop.h, Math.max(y / scale(), crop.top + 40)); place(); });
+  place();
+}
+
+function handle(label) {
+  const h = Object.assign(document.createElement("div"), { className: "handle" });
+  h.append(Object.assign(document.createElement("span"), { textContent: label }));
+  return h;
+}
+
+function drag(el, move) {  // pointer events: mouse and touch alike
+  el.onpointerdown = ev => {
+    el.setPointerCapture(ev.pointerId);
+    const top = $("#paper").getBoundingClientRect().top;
+    el.onpointermove = e => move(e.clientY - top);
+    el.onpointerup = () => { el.onpointermove = null; crop.top = Math.round(crop.top); crop.bottom = Math.round(crop.bottom); };
+  };
+}
+
+$("#reset").onclick = () => { if (crop) { crop.top = 0; crop.bottom = crop.h; showEditor(); } };
+$("#apply").onclick = () => {
+  const a = $("#edittext").value;
+  const { q, icon } = current;
+  preview("/api/answer", JSON.stringify({ q, a, icon }), "application/json", { q, a, icon });
+};
+addEventListener("resize", () => editing && showEditor());
 
 document.querySelectorAll("[data-card]").forEach(b => b.onclick = () => preview("/api/card/" + b.dataset.card));
 
@@ -180,8 +288,15 @@ $("#ask").onsubmit = async ev => {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     entry.querySelector(".a").textContent = d.answer;
-    const again = Object.assign(document.createElement("button"), { textContent: "Vis kvittering" });
-    const show = () => preview("/api/answer", JSON.stringify({ q, a: d.answer }), "application/json");
+    entry.append(Object.assign(document.createElement("div"), { className: "cost", textContent: `≈ $${d.cost.toFixed(4)} · ${d.model}` }));
+    showSpent(d.spent);
+    const again = Object.assign(document.createElement("button"), { textContent: d.recipe ? "Vis oppskriften" : "Vis kvittering" });
+    // a recipe the answer read or drafted prints as its card, even if the model only described it
+    const show = d.recipe && !/^## (Ingredienser|Ingredients)\s*$/im.test(d.answer)
+      ? () => preview("/api/recipe?name=" + encodeURIComponent(d.recipe))
+      : () => preview("/api/answer", JSON.stringify({ q, a: d.answer, icon: d.icon }), "application/json",
+                      { q, a: d.answer, icon: d.icon });
+    if (d.recipe) loadRecipes();
     again.onclick = show;
     entry.append(again);
     ev.target.q.value = "";
@@ -228,7 +343,56 @@ async function refreshStatus() {
     p.textContent = "Skriver: " + s.state; p.className = "pill " + s.level;
   } catch { p.textContent = "Serveren svarer ikke"; p.className = "pill red"; }
 }
+// New recipe: the template (recipes/_mal.md) in a text box; preview renders it as the printed card
+$("#newrecipe").onclick = async () => {
+  if (!$("#recipetext").value) $("#recipetext").value = (await (await fetch("/api/recipe-template")).json()).markdown;
+  $("#recipeform").hidden = false; $("#newrecipe").hidden = true;
+  $("#recipetext").focus();
+};
+$("#recipecancel").onclick = () => { $("#recipeform").hidden = true; $("#newrecipe").hidden = false; };
+$("#recipepreview").onclick = () =>
+  preview("/api/answer", JSON.stringify({ q: "", a: $("#recipetext").value }), "application/json");
+$("#recipesave").onclick = async () => {
+  const r = await fetch("/api/recipes", { method: "POST", body: JSON.stringify({ markdown: $("#recipetext").value }),
+                                          headers: { "Content-Type": "application/json" } });
+  const d = await r.json();
+  if (!r.ok) return say(d.error, true);
+  $("#recipetext").value = ""; $("#recipeform").hidden = true; $("#newrecipe").hidden = false;
+  await loadRecipes();
+  await preview("/api/recipe?name=" + encodeURIComponent(d.name));
+  say(`Lagret som ${d.name}.md i oppskriftene.`);
+};
+
+function showSpent(dollars) { $("#spent").textContent = `brukt ≈ $${dollars.toFixed(4)} siden oppstart`; }
+
+async function loadModels() {
+  const d = await (await fetch("/api/models")).json();
+  const sel = $("#model");
+  for (const m of d.models) {
+    sel.append(Object.assign(document.createElement("option"), {
+      value: m.id, selected: m.id === d.model, textContent: `${m.name}: $${m.price[0]} / $${m.price[1]} per mill. tokens` }));
+  }
+  showSpent(d.spent);
+  sel.onchange = async () => {
+    const r = await fetch("/api/model", { method: "POST", body: JSON.stringify({ model: sel.value }), headers: { "Content-Type": "application/json" } });
+    say(r.ok ? "Byttet modell. Ny samtale starter." : "Kunne ikke bytte modell.", !r.ok);
+  };
+}
+
+const MODES = { rail: "Tog fra", bus: "Buss fra", tram: "Trikk fra", metro: "T-bane fra", water: "Båt fra" };
+async function loadStops() {
+  const stops = await (await fetch("/api/stops")).json();
+  stops.forEach((s, i) => {
+    const b = Object.assign(document.createElement("button"), {
+      textContent: s.mode ? `${MODES[s.mode] || s.mode} ${s.name}` : `Avganger ${s.name}` });
+    b.onclick = () => preview("/api/card/departures?stop=" + i);
+    $("#stops").append(b);
+  });
+}
+
 refreshStatus(); setInterval(refreshStatus, 10000);
+loadModels();
+loadStops();
 fetch("/api/url").then(r => r.json()).then(d => { const a = $("#url"); a.href = a.textContent = d.url; });
 loadRecipes();
 </script>

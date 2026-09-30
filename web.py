@@ -43,7 +43,7 @@ def lan_ip():
 
 CARDS = {  # the keyword receipts, shared with main.py
     "weather": lambda: layout.weather(agent.PLACE, agent.forecast()),
-    "departures": lambda: layout.departures(*agent.calls(agent.STOP, 10)),
+    "departures": lambda stop=0: layout.departures(*agent.calls(agent.STOPS[stop][0], 10, agent.STOPS[stop][1])),
     "flights": lambda: layout.radar(agent.PLACE, agent.LAT, agent.LON, agent.aircraft(radius_km=40), 40),
     "art": lambda: layout.maze(date.today()),
     "qr": lambda: layout.qr(URL),
@@ -53,12 +53,14 @@ CARDS = {  # the keyword receipts, shared with main.py
 def photo(data, brightness=1.0, contrast=1.0):
     img = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))  # phones store rotation in EXIF
     img = ImageEnhance.Contrast(ImageEnhance.Brightness(img.convert("L")).enhance(brightness)).enhance(contrast)
-    out = layout.dither(img)
-    return out.crop((0, 0, out.width, min(out.height, layout.MAX_H)))
+    return layout.photo(layout.dither(img))  # stamped when rendered: at upload for the preview, at print for paper
 
 
-def render(img, do_print):
-    """-> PNG of exactly what the head fires; sends it to the printer too when do_print."""
+def render(img, do_print, top=0, bottom=None):
+    """-> PNG of exactly what the head fires; sends it to the printer too when do_print.
+    top/bottom: the rows to keep, in printer dots, from the page's draggable start and cut lines."""
+    bottom = img.height if bottom is None else min(max(bottom, 1), img.height)
+    img = img.crop((0, min(max(top, 0), bottom - 1), img.width, bottom))
     job = printer.encode(layout.to_rows(img))
     if do_print:
         if not PRINTER:
@@ -115,6 +117,15 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, buf.getvalue(), "image/png")
         elif path == "/api/url":
             self.json({"url": URL})
+        elif path == "/api/recipe-template":
+            tpl = cookbook.ROOT / "_mal.md"
+            self.json({"markdown": tpl.read_text(encoding="utf-8") if tpl.exists() else
+                       "---\nporsjoner: 4\ntid: \ntags: \nkilde: \n---\n\n# \n\n## Ingredienser\n\n- \n\n## Slik gjør du\n\n1. \n"})
+        elif path == "/api/stops":
+            self.json([{"name": n, "mode": m} for n, m in agent.STOPS])
+        elif path == "/api/models":
+            self.json({"model": agent.model, "spent": agent.spent,
+                       "models": [{"id": k, "name": v["name"], "price": v["price"]} for k, v in agent.MODELS.items()]})
         else:
             self.json({"error": "not found"}, 404)
 
@@ -126,19 +137,36 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "Filen er for stor (maks 25 MB)."}, 413)
         body, pr = self.rfile.read(n), q.get("print") == "1"
         try:
+            crop = (int(q.get("top", 0)), int(q["bottom"]) if "bottom" in q else None)
             if url.path == "/api/ask":
-                self.json({"answer": agent.ask(json.loads(body)["q"])})
+                answer, dollars = agent.ask(json.loads(body)["q"])
+                icon, answer = layout.theme(answer)  # the "tema: x" line becomes the receipt's icon
+                self.json({"answer": answer, "icon": icon, "cost": dollars, "spent": agent.spent,
+                           "model": agent.MODELS[agent.model]["name"],
+                           # the recipe it read or drafted, so the page shows that card rather than a short note
+                           "recipe": cookbook.last and cookbook.last.relative_to(cookbook.ROOT).with_suffix("").as_posix()})
+            elif url.path == "/api/model":
+                agent.set_model(json.loads(body)["model"])
+                self.json({"model": agent.model})
             elif url.path == "/api/answer":
                 d = json.loads(body)
-                img = layout.recipe(d["a"]) if layout.is_recipe(d["a"]) else layout.answer(d["q"], d["a"])
-                self.reply(200, render(img, pr), "image/png")
+                img = (layout.recipe(d["a"]) if layout.is_recipe(d["a"])
+                       else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")))
+                self.reply(200, render(img, pr, *crop), "image/png")
+            elif url.path == "/api/recipes":  # a recipe typed on the page
+                self.json({"name": cookbook.add(json.loads(body)["markdown"])})
             elif url.path == "/api/photo":
                 img = photo(body, float(q.get("brightness", 1)), float(q.get("contrast", 1)))
-                self.reply(200, render(img, pr), "image/png")
+                self.reply(200, render(img, pr, *crop), "image/png")
             elif url.path == "/api/recipe":
-                self.reply(200, render(layout.recipe(cookbook.read_recipe(q["name"])), pr), "image/png")
+                self.reply(200, render(layout.recipe(cookbook.read_recipe(q["name"])), pr, *crop), "image/png")
+            elif url.path == "/api/card/departures":  # ?stop= picks a board from agent.STOPS
+                stop = int(q.get("stop", 0))
+                if not 0 <= stop < len(agent.STOPS):
+                    raise ValueError(f"No stop number {stop}")
+                self.reply(200, render(CARDS["departures"](stop), pr, *crop), "image/png")
             elif url.path.startswith("/api/card/") and url.path[10:] in CARDS:
-                self.reply(200, render(CARDS[url.path[10:]](), pr), "image/png")
+                self.reply(200, render(CARDS[url.path[10:]](), pr, *crop), "image/png")
             else:
                 self.json({"error": "not found"}, 404)
         except Exception as e:  # one bad request shouldn't take the server down; tell the page what broke

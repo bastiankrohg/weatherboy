@@ -51,18 +51,29 @@ def save_draft(title: str, markdown: str, source_url: str) -> str:
         source_url: The page the recipe came from.
     """
     global last
-    if len(markdown) > 20_000:
-        raise ValueError("That's too long for a recipe.")
-    slug = re.sub(r"[^a-z0-9æøå]+", "-", title.lower()).strip("-")[:60] or "oppskrift"
-    folder = ROOT / DRAFTS
-    folder.mkdir(parents=True, exist_ok=True)
-    p, n = folder / f"{slug}.md", 2
-    while p.exists():  # never overwrite
-        p, n = folder / f"{slug}-{n}.md", n + 1
     text = markdown.strip()
     if not re.search(r"^kilde:", text, re.M | re.I):  # the source always goes in the front matter
         text = (text.replace("---\n", f"---\nkilde: {source_url}\n", 1) if text.startswith("---")
                 else f"---\nkilde: {source_url}\n---\n\n{text}")
+    last = _write(title, text, ROOT / DRAFTS)
+    return f"Saved as {_name(last)}"
+
+
+def add(markdown):
+    """A recipe the user wrote themselves (web page): straight into the collection, named after its # title."""
+    title = next((l[2:].strip() for l in markdown.splitlines() if l.startswith("# ")), "")
+    if not title:
+        raise ValueError('Oppskriften trenger en tittel: en linje som starter med "# ".')
+    return _name(_write(title, markdown.strip(), ROOT))
+
+
+def _write(title, text, folder):
+    if len(text) > 20_000:
+        raise ValueError("That's too long for a recipe.")
+    slug = re.sub(r"[^a-z0-9æøå]+", "-", title.lower()).strip("-")[:60] or "oppskrift"
+    folder.mkdir(parents=True, exist_ok=True)
+    p, n = folder / f"{slug}.md", 2
+    while p.exists():  # never overwrite
+        p, n = folder / f"{slug}-{n}.md", n + 1
     p.write_text(text + "\n", encoding="utf-8")
-    last = p
-    return f"Saved as {_name(p)}"
+    return p
