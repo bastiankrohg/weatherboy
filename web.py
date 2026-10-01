@@ -104,6 +104,17 @@ def answer_json(answer, dollars, icon=None):
             "recipe": cookbook.last and cookbook.last.relative_to(cookbook.ROOT).with_suffix("").as_posix()}
 
 
+def printer_here():
+    """Is this machine on the printer's network, i.e. at home? A quick knock on the printer's port."""
+    if not PRINTER:
+        return True  # no printer configured: the network we're on is all we have to go by
+    try:
+        socket.create_connection((PRINTER, 9100), timeout=2).close()
+        return True
+    except OSError:
+        return False
+
+
 def status():
     """green: ready. yellow: on the network but won't print. red: can't reach it. off: no printer configured."""
     if not PRINTER:
@@ -143,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
         Without it, the request came straight from the local network (as before the tunnel). Nobody can leave
         the header out from outside: the only way in from the internet is through Cloudflare, which sets it."""
         visitor = self.headers.get("CF-Connecting-IP")
-        if visitor is None or home.allowed(visitor):
+        if visitor is None or home.allowed(visitor, at_home=printer_here):
             return True
         self.reply(403, AWAY.encode(), "text/html; charset=utf-8")
         return False
@@ -304,15 +315,30 @@ def word_card(lang):
     return layout.word(words.today(lang), words.label(lang))
 
 
-def start(port=PORT, printer_ip=None):
+def tunnel(name):
+    """Run the Cloudflare tunnel `name` (set up with cloudflared, see the README) alongside the server; it
+    stops when the server does."""
+    import atexit
+    import shutil
+    import subprocess
+    exe = shutil.which("cloudflared") or str(Path.home() / "bin" / "cloudflared.exe")
+    proc = subprocess.Popen([exe, "tunnel", "run", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    atexit.register(proc.terminate)
+    return proc
+
+
+def start(port=PORT, printer_ip=None, tunnel_name=None):
     """Serve in a background thread on all interfaces, so phones on the WiFi can reach it. With a printer,
-    also runs the daily prints (art, word of the day), switched on and off from the page."""
+    also runs the daily prints (art, word of the day), switched on and off from the page. With a tunnel name,
+    also the Cloudflare tunnel that makes it reachable from home despite the router's AP isolation."""
     global PRINTER, URL
     PRINTER, URL = printer_ip, PUBLIC_URL or f"http://{lan_ip()}:{port}"
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if printer_ip:
         threading.Thread(target=daily.run, args=(daily_job,), daemon=True).start()
+    if tunnel_name:
+        tunnel(tunnel_name)
     return server
 
 
@@ -322,10 +348,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--printer", help="printer IP; omit for previews only")
     p.add_argument("--port", type=int, default=PORT)
+    p.add_argument("--tunnel", help="also run this Cloudflare tunnel, e.g. weatherboy")
     a = p.parse_args()
     # never crash on a character the console can't show; flush each line, so a service's log is live
     sys.stdout.reconfigure(errors="replace", line_buffering=True)
-    start(a.port, a.printer)
+    start(a.port, a.printer, a.tunnel)
     print(banner())
     while True:
         time.sleep(3600)

@@ -60,13 +60,14 @@ def main():
     p.add_argument("--password", default="pineapple,ananas", help="comma-separated words that start a call")
     p.add_argument("--phone", action="store_true", help="ESP32 in the F615: listen only while off hook, drive its LCD")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
+    p.add_argument("--tunnel", help="also run this Cloudflare tunnel for the web page, e.g. weatherboy")
     a = p.parse_args()
     # an emoji in an answer must not crash the loop on a cp1252 console; flush each line for service logs
     sys.stdout.reconfigure(errors="replace", line_buffering=True)
     password = [w.strip().lower() for w in a.password.split(",")]
 
     if a.web:
-        web.start(a.web, a.printer)
+        web.start(a.web, a.printer, a.tunnel)
         print(web.banner())
     import speak
     phone = None

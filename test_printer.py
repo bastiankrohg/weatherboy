@@ -253,6 +253,14 @@ _, short = call("/api/text", json.dumps({"kind": "short", "a": pk}).encode(), "a
 assert short.width == 576 and short.height < layout.recipe(pk).height * 0.7
 # the tunnel: visitors reported by Cloudflare get in only from the flat's own address; the LAN as before
 import home, ipaddress, time as _time
+home.FILE = Path(tempfile.mkdtemp()) / "hjemme.json"
+home.public_ipv4 = lambda: ipaddress.ip_address("84.214.212.9")
+home.ipv6_home_net = lambda: None
+assert home.addresses(at_home=lambda: True)[0] == ipaddress.ip_address("84.214.212.9")  # at home: learned, saved
+home._home.update(v4=None, at=0.0)
+home.public_ipv4 = lambda: ipaddress.ip_address("193.157.162.12")  # the laptop is at the university now
+assert home.addresses(at_home=lambda: False)[0] == ipaddress.ip_address("84.214.212.9")  # away: the saved home
+assert not home.allowed("193.157.162.12", at_home=lambda: False)  # the university doesn't count as home
 home._home.update(v4=ipaddress.ip_address("84.214.212.9"), v6=ipaddress.ip_network("2a02:fe0:c43e:4600::/56"),
                   at=_time.time())
 assert home.allowed("84.214.212.9") and home.allowed("2a02:fe0:c43e:4601::abcd")

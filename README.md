@@ -90,6 +90,21 @@ It only admits devices on your own network. A Pi or Mac needs nothing.
 
 **Still timing out?** Then the phone's requests never arrive, and the router is keeping WiFi devices apart: turn off "client isolation" / "AP isolation" in its WiFi settings (http://192.168.0.1 on Telia routers). A server on a cable (like the printer, or a Pi) is usually reachable even with isolation on.
 
+### From anywhere at home, through a tunnel
+
+Our router keeps WiFi devices apart (AP isolation), so phones reach the page through a Cloudflare Tunnel instead: **https://print.bastiankrohg.com**. Only visitors coming from the flat's own internet address get in, so everyone on the home WiFi does and nobody else does. "Home" is wherever the printer answers: the address is only learned there, and kept in `data/hjemme.json`, so a laptop taken to the university doesn't let the university in.
+
+```mermaid
+flowchart LR
+    Ph["Phone on the home WiFi"] -->|"https://print.bastiankrohg.com<br/>from the flat's address"| CF[Cloudflare]
+    X["Anyone else"] -->|"other address"| CF
+    CF -->|"tunnel, opened from inside"| W["cloudflared → web.py :8615"]
+    W -->|"same address as home?"| OK["the page"]
+    W -->|"no"| NO["403: Weatherboy er hjemme"]
+```
+
+Once per machine: `cloudflared tunnel login` (pick the domain in the browser), `cloudflared tunnel create weatherboy`, `cloudflared tunnel route dns weatherboy print.<domain>`, and a `~/.cloudflared/config.yml` sending that hostname to `http://localhost:8615`. Then `uv run web.py --printer <ip> --tunnel weatherboy` runs both, and `WEATHERBOY_PUBLIC_URL` in `.env` puts the address on the QR label.
+
 ## Recipes
 
 Your recipes live in their own git repo, `recipes/` (git-ignored here), or wherever `WEATHERBOY_RECIPES` points. One Markdown file per dish, in the format in [recipes/README.md](recipes/README.md).
