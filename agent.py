@@ -13,6 +13,7 @@ import cookbook
 import local
 import presets
 import shoplist
+import websearch
 
 
 def load_env(path=Path(__file__).with_name(".env")):
@@ -184,6 +185,8 @@ def flights(lat: float, lon: float, radius_km: float = 30) -> str:
     return "\n".join(rows[:25]) or "No aircraft airborne in that box right now."
 
 
+# Claude searches the web on Anthropic's side; a local model gets these instead (websearch.py, free)
+LOCAL_WEB = [beta_tool(websearch.web_search), beta_tool(websearch.web_fetch)]
 TOOLS = [beta_tool(weather), beta_tool(departures), beta_tool(flights),
          beta_tool(cookbook.list_recipes), beta_tool(cookbook.read_recipe), beta_tool(cookbook.save_draft),
          beta_tool(shoplist.add_to_shopping_list)]
@@ -193,7 +196,7 @@ WEB_LIMITS = {"search": {"max_uses": 2}, "fetch": {"max_uses": 2, "max_content_t
 
 # $ per million tokens (input, output), from the Claude API price list. Cheapest first: the page lists them in order.
 MODELS = {
-    "local": {"name": f"Lokal {local.MODEL} (gratis, uten nett)", "price": (0, 0)},  # see local.py
+    "local": {"name": f"Lokal {local.MODEL} (gratis)", "price": (0, 0)},  # see local.py
     "claude-haiku-4-5": {"name": "Haiku 4.5 (billigst)", "price": (1, 5)},
     "claude-sonnet-5-5": {"name": "Sonnet 5.5", "price": (2, 10)},
     "claude-opus-5-5": {"name": "Opus 5.5 (smartest, dyrest)", "price": (4, 20)},
@@ -252,7 +255,7 @@ def _ask(question, voice):
     cookbook.last = None
     history.append({"role": "user", "content": f"[{datetime.now():%A %d.%m.%Y %H:%M}] {question}"})
     if model == "local":  # free: Ollama on the work desktop or this machine, with our own tools (no web)
-        return local.chat(VOICE if voice else PAPER, history, TOOLS), 0.0
+        return local.chat(VOICE if voice else PAPER, history, TOOLS + LOCAL_WEB), 0.0
     return _run(VOICE if voice else PAPER, history)
 
 

@@ -176,7 +176,7 @@ The model picker on the page (or `WEATHERBOY_MODEL` in `.env`) chooses who answe
 
 | Choice | Cost | Notes |
 |---|---|---|
-| `local` | free | Ollama, or anything with an OpenAI-style chat API and tool calls, on the work desktop over Tailscale, else on this machine (`WEATHERBOY_LOCAL_URLS`, `WEATHERBOY_LOCAL_MODEL`, default `qwen2.5:7b`). Gets Weatherboy's own tools, but no web search |
+| `local` | free | Ollama, or anything with an OpenAI-style chat API and tool calls, on the work desktop over Tailscale, else on this machine (`WEATHERBOY_LOCAL_URLS`, `WEATHERBOY_LOCAL_MODEL`, default `qwen2.5:7b`). Gets Weatherboy's own tools, plus free web search (DuckDuckGo, or your own SearXNG via `WEATHERBOY_SEARXNG_URL`) and page reading limited to public addresses |
 | `claude-haiku-4-5` | ≈ $0.005 a question | Default today; web search included |
 | `claude-sonnet-5-5`, `claude-opus-5-5` | more | Wished-for presets are always designed by Sonnet 5.5 |
 

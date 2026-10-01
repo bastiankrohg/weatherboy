@@ -10,8 +10,8 @@ import requests
 SERVERS = [u.strip() for u in os.environ.get("WEATHERBOY_LOCAL_URLS",
                                              "http://robotlab:11434/v1,http://localhost:11434/v1").split(",") if u.strip()]
 MODEL = os.environ.get("WEATHERBOY_LOCAL_MODEL", "qwen2.5:7b")  # needs tool calling: qwen2.5, llama3.1, hermes3 ...
-NO_WEB = ("\nYou're running locally without web access: if something needs current information from the web, "
-          "say so in a sentence instead of guessing.")
+LOCAL = ("\nYou run on a small local model: use web_search and web_fetch for anything current or unfamiliar "
+         "rather than guessing, and keep tool calls few.")
 
 
 def server():
@@ -37,7 +37,7 @@ def chat(system, messages, tools, model=MODEL):
     by_name = {t.name: t for t in tools}
     for _ in range(8):  # a few rounds of tool calls, then it has to answer
         r = requests.post(url.rstrip("/") + "/chat/completions", timeout=300, json={
-            "model": model, "tools": specs, "messages": [{"role": "system", "content": system + NO_WEB}] + messages})
+            "model": model, "tools": specs, "messages": [{"role": "system", "content": system + LOCAL}] + messages})
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]
         messages.append({k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")})

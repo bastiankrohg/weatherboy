@@ -403,6 +403,19 @@ assert v["kind"] == "answer" and v["text"] == "Lys går fort." and v["printed"] 
 srv2.shutdown()
 agent.ask = real_ask
 
+# web tools for the local model: DuckDuckGo's results parsed; fetching only reaches public addresses
+import websearch
+p = websearch._DDG()
+p.feed('<a class="result__a" href="https://ruter.no/trikk">Trikk - Ruter</a>'
+       '<a class="result__snippet" href="x">Linje <b>17</b> og 18</a>'
+       '<a class="result__a" href="//duckduckgo.com/y.js?ad">Annonse</a>')
+assert p.results[0] == {"title": "Trikk - Ruter", "url": "https://ruter.no/trikk", "snippet": "Linje 17 og 18"}
+for bad in ("http://192.168.0.217:9100/", "http://localhost:8615/api/url", "http://127.0.0.1/", "http://10.0.0.1/",
+            "http://169.254.169.254/latest/meta-data", "http://[::1]/", "file:///etc/passwd", "ftp://example.com/"):
+    assert not websearch.public(bad), bad
+    assert websearch.web_fetch(bad).startswith("Refused"), bad
+assert [t.name for t in agent.LOCAL_WEB] == ["web_search", "web_fetch"]
+
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"
 assert speak.lang_of("It will be twelve degrees and light rain.") == "en"
