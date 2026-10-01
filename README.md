@@ -170,6 +170,53 @@ flowchart TD
 
 The swap-in module speaks the same protocol, so nothing changes on the host.
 
+## Models: Claude or free and local
+
+The model picker on the page (or `WEATHERBOY_MODEL` in `.env`) chooses who answers questions:
+
+| Choice | Cost | Notes |
+|---|---|---|
+| `local` | free | Ollama, or anything with an OpenAI-style chat API and tool calls, on the work desktop over Tailscale, else on this machine (`WEATHERBOY_LOCAL_URLS`, `WEATHERBOY_LOCAL_MODEL`, default `qwen2.5:7b`). Gets Weatherboy's own tools, but no web search |
+| `claude-haiku-4-5` | ≈ $0.005 a question | Default today; web search included |
+| `claude-sonnet-5-5`, `claude-opus-5-5` | more | Wished-for presets are always designed by Sonnet 5.5 |
+
+Ollama only listens on its own machine by default. To share it with the tailnet and nobody else, run this once on the desktop (Ollama itself stays on localhost):
+
+```sh
+tailscale serve --bg --tcp 11434 tcp://localhost:11434
+ollama pull qwen2.5:7b      # or another model with tool calling: llama3.1, hermes3, qwen2.5:14b ...
+```
+
+## Transcripts from anywhere: `/api/voice`
+
+Any speech-to-text pipeline (a phone app, another machine with the handset) can hand Weatherboy a transcript and get the same routing as the handset: keyword receipts, the call password, questions to the model, "skriv ut".
+
+```sh
+curl -X POST https://print.bastiankrohg.com/api/voice -d '{"text": "hvordan blir været i kveld", "call": false}'
+```
+
+The reply says what happened (`kind`: card, answer, call, hangup, print, ignored), with `say` for anything to speak back and `printed`. Inside a call (`"call": true`) answers are short and spoken instead of printed. The same home-only rule applies.
+
+## Running on the MacBook Pro (2012, macOS 10.15)
+
+The server runs there; the handset's speech needs a newer machine (onnxruntime has no Intel-Mac builds, PyAV needs macOS 11), which can send transcripts to `/api/voice` instead.
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone git@github.com:bastiankrohg/weatherboy.git && cd weatherboy
+git clone git@github.com:bastiankrohg/recipes.git recipes
+uv sync                                   # server only
+cp /path/to/.env .                        # ANTHROPIC_API_KEY, WEATHERBOY_PUBLIC_URL, WEATHERBOY_MODEL=local ...
+```
+
+For the tunnel, install `cloudflared` (`brew install cloudflared`, or the `darwin-amd64` release), copy `~/.cloudflared/` from the Windows laptop (`cert.pem`, the tunnel's `<id>.json` and `config.yml`, with `credentials-file:` pointing at the new path), then:
+
+```sh
+uv run web.py --printer 192.168.0.217 --tunnel weatherboy
+```
+
+`caffeinate -s` in front keeps the Mac from sleeping. Only one machine should run the tunnel at a time.
+
 ## Setup
 
 **You need your own Claude API key.** Get one at [console.anthropic.com](https://console.anthropic.com), then create a file called `.env` next to `agent.py` containing:
@@ -185,9 +232,9 @@ flowchart TD
     Start{Platform} --> Win["Windows / Mac"]
     Start --> Pi["Raspberry Pi 4/5, 64-bit Pi OS<br/>sudo apt install libportaudio2"]
     Win & Pi --> UV["install uv: docs.astral.sh/uv"]
-    UV --> Req["uv sync<br/>fetches Python and every dependency;<br/>Intel Macs get the older ctranslate2 automatically"]
+    UV --> Req["uv sync: the server<br/>uv sync --extra voice: + the handset's speech<br/>(not on Intel Macs before macOS 11)"]
     Req --> Key[".env next to agent.py (git-ignored):<br/>ANTHROPIC_API_KEY=sk-ant-...<br/>optional: WEATHERBOY_PLACE, _LATLON, _STOPS, _UA, _RECIPES, _MODEL"]
-    Key --> Check["uv run test_printer.py"]
+    Key --> Check["uv run test_printer.py (with the voice extra)"]
 ```
 
 Whisper models and Piper voices download from Hugging Face the first time they're used.

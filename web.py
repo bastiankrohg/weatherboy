@@ -27,6 +27,7 @@ import home
 import layout
 import presets
 import printer
+import router
 import shoplist
 import words
 
@@ -222,6 +223,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path == "/api/ask":
                 self.json(answer_json(*agent.ask(json.loads(body)["q"])))
+            elif url.path == "/api/voice":  # a transcript from any speech pipeline, routed like the handset's
+                d = json.loads(body)
+                r = router.route(d["text"], CARDS, call=bool(d.get("call")))
+                printed = "image" in r and d.get("print", True)
+                if printed:
+                    render(r.pop("image"), True)
+                self.json({k: v for k, v in r.items() if k != "image"} | {"printed": bool(printed)})
             elif url.path == "/api/preset":  # a wished-for button: its prompt, asked like a question
                 p = presets.get(json.loads(body)["id"])
                 self.json(answer_json(*agent.ask(p["prompt"]), icon=p["icon"]))

@@ -10,40 +10,18 @@
 """
 import argparse
 import os
-import re
 import sys
 import time
 from datetime import datetime
-from difflib import get_close_matches
 
 import agent
-import cookbook
 import layout
 import printer
+import router
 import web
 
-COMMANDS = {  # short utterances (1-3 words) that skip Claude. NB-Whisper writes English words in Norwegian.
-    "weather": ["weather", "vær", "været", "værmelding", "yr"],
-    "departures": ["departures", "avganger", "avgang", "tog", "toget", "train", "trikken", "bussen", "tram", "bus"],
-    "flights": ["flights", "planes", "fly", "flyene", "radar"],
-    "art": ["art", "kunst", "labyrint", "maze"],
-    "print": ["skriv ut", "print"],
-    "bye": ["ha det", "hade", "bye", "goodbye", "legg på", "hang up"],
-}
 CHAT_IDLE = 45  # seconds of silence before the phone call hangs up
 DAYS = "mandag tirsdag onsdag torsdag fredag lørdag søndag".split()
-
-
-def command(text, password=()):
-    words = re.findall(r"\w+", text.lower())
-    if not 1 <= len(words) <= 3:  # ponytail: keywords only fire on short utterances; sentences go to Claude
-        return None
-    for name, keys in [("chat", password), *COMMANDS.items()]:
-        for k in keys:
-            # fuzzy for longer words ("Whether." -> weather), exact for short ones ("by" is not "bye")
-            if " " in k and k in " ".join(words) or get_close_matches(k, words, 1, 0.8 if len(k) > 3 else 1.0):
-                return name
-    return None
 
 
 def main():
@@ -57,7 +35,7 @@ def main():
     p.add_argument("--model", default="NbAiLab/nb-whisper-small", help="Norwegian model (nb-whisper-base on a Pi)")
     p.add_argument("--en-model", default="small", help="English model: stock tiny/base/small/medium")
     p.add_argument("--lang", default="auto", choices=["auto", "no", "en"], help="auto picks per utterance")
-    p.add_argument("--password", default="pineapple,ananas", help="comma-separated words that start a call")
+    p.add_argument("--password", default=",".join(router.PASSWORD), help="comma-separated words that start a call")
     p.add_argument("--phone", action="store_true", help="ESP32 in the F615: listen only while off hook, drive its LCD")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
     p.add_argument("--tunnel", help="also run this Cloudflare tunnel for the web page, e.g. weatherboy")
@@ -123,7 +101,7 @@ def main():
         tone(speak.BLIP)
         return stt(audio)[0].strip()
 
-    chat, last = False, None  # last (question, answer), for "print that"
+    chat = False
     while True:
         try:
             if hung_up():
@@ -135,42 +113,25 @@ def main():
                 chat = False
                 tone(speak.BUSY)
                 continue
-            cmd = command(q, password)
+            cmd = router.command(q, password)
             print(f"> {q}" + (f"   [{cmd}]" if cmd else ""))
             show("Tenker..." if not cmd or cmd == "chat" else cmd.capitalize(), q)
-            if cmd == "print":  # the recipe itself if the last answer used one, else the last answer
-                if cookbook.last:
-                    out(layout.recipe(cookbook.last.read_text(encoding="utf-8")))
-                elif last:
-                    out(layout.recipe(last[1]) if layout.is_recipe(last[1]) else layout.answer(*last))
-            elif chat:
-                if cmd == "bye":
-                    say("Bye!" if re.search("bye|hang", q, re.I) else "Ha det!")
-                    tone(speak.BUSY)
-                    chat = False
-                else:
-                    ans, dollars = agent.ask(q, voice=True)
-                    print(f"{ans}\n[~${dollars:.4f}, ${agent.spent:.4f} since start]\n")
-                    last = (q, ans)
-                    show("Weatherboy", ans)
-                    say(ans)
-            elif cmd == "chat":
+            r = router.route(q, web.CARDS, call=chat, password=password)  # same rules as /api/voice
+            if "image" in r:
+                out(r["image"])
+            if r["kind"] == "answer":
+                print(f"{r['text']}\n[~${r['cost']:.4f}, ${agent.spent:.4f} since start]\n")
+            if r["kind"] == "call":
                 tone(speak.RINGBACK)
-                say("Hallo, det er Weatherboy. Hva lurer du på?")
+                say(r["say"])
                 chat = True
-            elif cmd in web.CARDS:  # weather, departures, flights, art
-                out(web.CARDS[cmd]())
-            elif len(q.split()) >= 2:  # ponytail: drops coughs and whisper's one-word hallucinations
-                ans, dollars = agent.ask(q)
-                print(f"{ans}\n[~${dollars:.4f}, ${agent.spent:.4f} since start]\n")
-                icon, ans = layout.theme(ans)  # the "tema: x" line becomes the receipt's icon
-                last = (q, ans, None, icon)    # layout.answer(question, text, when, icon), for "skriv ut"
-                if layout.is_recipe(ans):
-                    out(layout.recipe(ans))
-                elif cookbook.last:  # it read or drafted a recipe but only talked about it: print the recipe itself
-                    out(layout.recipe(cookbook.last.read_text(encoding="utf-8")))
-                else:
-                    out(layout.answer(q, ans, icon=icon))
+            elif r["kind"] == "hangup":
+                say(r["say"])
+                tone(speak.BUSY)
+                chat = False
+            elif r["kind"] == "answer" and chat:
+                show("Weatherboy", r["say"])
+                say(r["say"])
         except (KeyboardInterrupt, EOFError):
             break
         except Exception as e:  # keep the handset alive; one bad API call shouldn't kill the loop

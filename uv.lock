@@ -1668,27 +1668,34 @@ wheels = [
 
 [[package]]
 name = "weatherboy"
-version = "1.0.0"
+version = "1.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },
-    { name = "ctranslate2", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
-    { name = "faster-whisper" },
     { name = "pillow" },
-    { name = "piper-tts" },
     { name = "qrcode" },
     { name = "requests" },
+]
+
+[package.optional-dependencies]
+voice = [
+    { name = "faster-whisper" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "piper-tts" },
     { name = "sounddevice" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=1.9" },
-    { name = "ctranslate2", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==4.3.1" },
-    { name = "faster-whisper", specifier = ">=1.2.1" },
+    { name = "faster-whisper", marker = "extra == 'voice'", specifier = ">=1.2.1" },
+    { name = "numpy", marker = "extra == 'voice'" },
     { name = "pillow", specifier = ">=12.3.0" },
-    { name = "piper-tts", specifier = ">=1.8.0" },
+    { name = "piper-tts", marker = "extra == 'voice'", specifier = ">=1.8.0" },
     { name = "qrcode", specifier = ">=8.2" },
     { name = "requests", specifier = ">=2.34.2" },
-    { name = "sounddevice", specifier = ">=0.5.6" },
+    { name = "sounddevice", marker = "extra == 'voice'", specifier = ">=0.5.6" },
 ]
+provides-extras = ["voice"]

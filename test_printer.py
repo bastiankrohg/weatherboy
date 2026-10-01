@@ -54,7 +54,7 @@ m1, m2 = layout.maze(date(2026, 9, 30), t0), layout.maze(date(2026, 9, 30), t0)
 assert m1.tobytes() == m2.tobytes() and m1.tobytes() != layout.maze(date(2026, 10, 1), t0).tobytes()
 
 # keywords: short utterances only, fuzzy on long words, exact on short ones
-from main import command
+from router import command
 pw = ["pineapple", "ananas"]
 cases = {"Whether.": "weather", "Været.": "weather", "Pineapple": "chat", "Ananas!": "chat", "Skriv ute!": "print",
          "Ha det bra.": "bye", "Print that": "print", "Fly": "flights", "Kunst": "art", "Neste trikken": "departures",
@@ -376,6 +376,32 @@ except RuntimeError as e:
     assert "svarer ikke" in str(e)
 agent.set_model("claude-haiku-4-5")
 fake.shutdown()
+
+# the router: one transcript in, one decision out, the same for the handset and /api/voice
+import router
+asked = []
+real_ask = agent.ask
+agent.ask = lambda q, voice=False: asked.append((q, voice)) or ("tema: idea\nLys går fort.", 0.0)
+fake_cards = {"weather": lambda: layout.lcd("vær", w=576)}
+r = router.route("Været", fake_cards)
+assert r["kind"] == "card" and r["cmd"] == "weather" and r["image"].width == 576 and not asked
+assert router.route("ananas", fake_cards) == {"kind": "call", "cmd": "chat", "say": router.GREETING}
+r = router.route("hvor fort går lyset", fake_cards)
+assert r["kind"] == "answer" and r["text"] == "Lys går fort." and asked[-1] == ("hvor fort går lyset", False)
+cookbook.last = None
+assert router.route("skriv ut", fake_cards)["image"].tobytes() == r["image"].tobytes()  # reprints the last one
+r = router.route("hvor fort går lyset", fake_cards, call=True)
+assert r["kind"] == "answer" and "image" not in r and r["say"] == "Lys går fort." and asked[-1][1] is True
+assert router.route("ha det", fake_cards, call=True)["kind"] == "hangup"
+assert router.route("hm", fake_cards)["kind"] == "ignored"
+srv2 = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+threading.Thread(target=srv2.serve_forever, daemon=True).start()
+v = json.loads(urllib.request.urlopen(urllib.request.Request(
+    f"http://127.0.0.1:{srv2.server_port}/api/voice", method="POST",
+    data=json.dumps({"text": "hvor fort går lyset", "print": False}).encode())).read())
+assert v["kind"] == "answer" and v["text"] == "Lys går fort." and v["printed"] is False and "image" not in v
+srv2.shutdown()
+agent.ask = real_ask
 
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"
