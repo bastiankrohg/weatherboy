@@ -3,15 +3,18 @@ Anything that speaks the OpenAI chat API with tool calls works the same (llama.c
 an agent with an OpenAI-compatible endpoint), so this is plain HTTP rather than one vendor's SDK."""
 import json
 import os
+import re
 
 import requests
 
 # tried in order, per question: the desktop may be off or asleep. Each is a base URL ending in /v1.
 SERVERS = [u.strip() for u in os.environ.get("WEATHERBOY_LOCAL_URLS",
                                              "http://robotlab:11434/v1,http://localhost:11434/v1").split(",") if u.strip()]
-MODEL = os.environ.get("WEATHERBOY_LOCAL_MODEL", "qwen2.5:7b")  # needs tool calling: qwen2.5, llama3.1, hermes3 ...
-LOCAL = ("\nYou run on a small local model: use web_search and web_fetch for anything current or unfamiliar "
-         "rather than guessing, and keep tool calls few.")
+MODEL = os.environ.get("WEATHERBOY_LOCAL_MODEL", "qwen3:8b")  # needs tool calling; best of robotlab's in tests
+LOCAL = ("\nYou run on a small local model, so don't trust your memory for facts, news, results or anything "
+         "that changes: call web_search first (and web_fetch to read a result), then answer from what you found. "
+         "Never write that you will search; just call the tool. Keep tool calls few. Write correct, natural "
+         "Norwegian (or the user's language) and nothing else; plain words over clever ones.")
 
 
 def server():
@@ -42,8 +45,8 @@ def chat(system, messages, tools, model=MODEL):
         msg = r.json()["choices"][0]["message"]
         messages.append({k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")})
         calls = msg.get("tool_calls") or []
-        if not calls:
-            return (msg.get("content") or "").strip()
+        if not calls:  # reasoning models (qwen3 …) may wrap their thinking in <think> tags: never print that
+            return re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
         for c in calls:
             try:
                 args = c["function"]["arguments"]

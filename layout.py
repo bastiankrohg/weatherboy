@@ -98,7 +98,9 @@ def theme(text):
     """Split the model's "tema: cooking" first line off an answer -> (theme, rest). No tag: a question."""
     first, _, rest = text.strip().partition("\n")
     m = re.fullmatch(r"\W*tema\W*:\s*(\w+)\W*", first.strip(), re.I)
-    return (m[1].lower(), rest.strip()) if m and m[1].lower() in ICONS else ("question", text.strip())
+    if not m:
+        return "question", text.strip()
+    return (m[1].lower() if m[1].lower() in ICONS else "question"), rest.strip()  # an unknown theme: still no tag
 
 
 def answer(question, text, when=None, icon=None):

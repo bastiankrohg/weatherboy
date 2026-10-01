@@ -147,7 +147,7 @@ except ValueError:
 # themes: the model's "tema:" line picks the icon and is dropped from the text; recipes pick their own
 assert layout.theme("tema: cocktail\n# Negroni") == ("cocktail", "# Negroni")
 assert layout.theme("**Tema: Idea**\nLys er raskt.") == ("idea", "Lys er raskt.")
-assert layout.theme("tema: dinosaur\nx") == ("question", "tema: dinosaur\nx") and layout.theme("Hei") == ("question", "Hei")
+assert layout.theme("tema: dinosaur\nx") == ("question", "x") and layout.theme("Hei") == ("question", "Hei")
 top = lambda img: img.crop((layout.M, 50, layout.M + 50, 95)).tobytes()  # the icon's corner of the header
 assert top(layout.answer("q", "tema: cocktail\nx", t0)) == top(layout.answer("q", "x", t0, icon="cocktail"))
 assert top(layout.answer("q", "x", t0, icon="cocktail")) != top(layout.answer("q", "x", t0))
