@@ -10,6 +10,7 @@ import requests
 from anthropic import Anthropic, beta_tool
 
 import cookbook
+import local
 import presets
 import shoplist
 
@@ -192,6 +193,7 @@ WEB_LIMITS = {"search": {"max_uses": 2}, "fetch": {"max_uses": 2, "max_content_t
 
 # $ per million tokens (input, output), from the Claude API price list. Cheapest first: the page lists them in order.
 MODELS = {
+    "local": {"name": f"Lokal {local.MODEL} (gratis, uten nett)", "price": (0, 0)},  # see local.py
     "claude-haiku-4-5": {"name": "Haiku 4.5 (billigst)", "price": (1, 5)},
     "claude-sonnet-5-5": {"name": "Sonnet 5.5", "price": (2, 10)},
     "claude-opus-5-5": {"name": "Opus 5.5 (smartest, dyrest)", "price": (4, 20)},
@@ -236,7 +238,7 @@ _lock = threading.Lock()  # one conversation, shared by the phone and the web pa
 
 def ask(question, voice=False):
     """-> (answer text, estimated $ for it)."""
-    if not (client.api_key or client.auth_token):
+    if model != "local" and not (client.api_key or client.auth_token):
         raise RuntimeError("Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py, og start på nytt.")
     with _lock:
         return _ask(question, voice)
@@ -249,6 +251,8 @@ def _ask(question, voice):
     last_ask = time.time()
     cookbook.last = None
     history.append({"role": "user", "content": f"[{datetime.now():%A %d.%m.%Y %H:%M}] {question}"})
+    if model == "local":  # free: Ollama on the work desktop or this machine, with our own tools (no web)
+        return local.chat(VOICE if voice else PAPER, history, TOOLS), 0.0
     return _run(VOICE if voice else PAPER, history)
 
 

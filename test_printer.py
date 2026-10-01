@@ -345,6 +345,38 @@ assert words.today("ko")["word"] == "ord3" and calls[-1] == ["ord1"]
 assert layout.word(words.today("ko"), words.label("ko")).width == 576
 assert "Dagens tegn" in words.label("ja") and "Dagens ord" in words.label("ko")
 
+# the local (free) model: an OpenAI-style server that first asks for a tool, then answers with its result
+import local
+from http.server import BaseHTTPRequestHandler
+class FakeOllama(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def do_GET(self):  # /v1/models: "I'm here"
+        self.send_response(200); self.end_headers(); self.wfile.write(b'{"data": []}')
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        assert req["messages"][0]["role"] == "system" and any(t["function"]["name"] == "list_recipes" for t in req["tools"])
+        last = req["messages"][-1]
+        msg = ({"role": "assistant", "content": "tema: cooking\nDere har: " + last["content"]} if last["role"] == "tool"
+               else {"role": "assistant", "content": "", "tool_calls": [
+                   {"id": "c1", "type": "function", "function": {"name": "list_recipes", "arguments": "{}"}}]})
+        body = json.dumps({"choices": [{"message": msg}]}).encode()
+        self.send_response(200); self.end_headers(); self.wfile.write(body)
+fake = ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
+threading.Thread(target=fake.serve_forever, daemon=True).start()
+local.SERVERS = ["http://127.0.0.1:1/v1", f"http://127.0.0.1:{fake.server_port}/v1"]  # first one is down
+agent.set_model("local")
+answer, dollars = agent.ask("Hvilke oppskrifter har vi?")
+assert dollars == 0 and "negroni" in answer and answer.startswith("tema: cooking")
+local.SERVERS = ["http://127.0.0.1:1/v1"]
+try:
+    agent.ask("hei")
+    raise AssertionError("answered without a local model")
+except RuntimeError as e:
+    assert "svarer ikke" in str(e)
+agent.set_model("claude-haiku-4-5")
+fake.shutdown()
+
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"
 assert speak.lang_of("It will be twelve degrees and light rain.") == "en"
