@@ -416,6 +416,25 @@ for bad in ("http://192.168.0.217:9100/", "http://localhost:8615/api/url", "http
     assert websearch.web_fetch(bad).startswith("Refused"), bad
 assert [t.name for t in agent.LOCAL_WEB] == ["web_search", "web_fetch"]
 
+# health: each component on its own; a crashing check is a red light, not a broken page; checks run in parallel
+real_checks = web.CHECKS
+slow = lambda: (_time.sleep(1), {"level": "green", "state": "ok"})[1]
+web.CHECKS = {"a": ("A", slow), "b": ("B", slow), "c": ("C", lambda: 1 / 0)}
+web._health["result"] = None
+t0_ = _time.time()
+h = web.health()
+assert _time.time() - t0_ < 1.8  # two 1-second checks side by side, not one after the other
+assert [(c["id"], c["level"]) for c in h] == [("a", "green"), ("b", "green"), ("c", "red")]
+assert "ZeroDivisionError" in h[2]["state"]
+web.CHECKS, web._health["result"] = real_checks, None
+local.SERVERS = ["http://127.0.0.1:1/v1"]
+assert web.check_local()["level"] == "red"
+web.PUBLIC_URL, saved_url = "", web.PUBLIC_URL
+assert web.check_tunnel() == {"level": "off", "state": "ikke satt opp"}
+web.PUBLIC_URL = saved_url
+daily.update({"art": False, "word": False})
+assert web.check_daily() == {"level": "off", "state": "av"}
+
 import speak
 assert speak.lang_of("Det blir tolv grader og lett regn.") == "no"
 assert speak.lang_of("It will be twelve degrees and light rain.") == "en"

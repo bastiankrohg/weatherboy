@@ -24,6 +24,8 @@ words.generate = lambda lang, seen: {"word": "산책", "reading": "sanchaek", "k
                                      "example": "산책해요.", "example_reading": "sanchaekaeyo.",
                                      "example_meaning": "I take a walk.", "note": ""}
 presets.create_preset("Dagens ord", "Gi meg et sjeldent norsk ord.", "idea")
+web.CHECKS = {"printer": ("Skriver", lambda: {"level": "red", "state": "svarer ikke"}),  # fast fakes:
+              "local": ("Lokal modell", lambda: {"level": "green", "state": "robotlab"})}   # no real services
 server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place
 B = f"http://127.0.0.1:{server.server_address[1]}"
 OUT = "out/"
@@ -144,6 +146,13 @@ with sync_playwright() as p:
     page.click("#d-preview")
     page.wait_for_function("() => current && current.path.startsWith('/api/card/word') && document.querySelector('#paper img')")
 
+    # health lights: the server's own plus one per component; tapping one says what's up
+    page.wait_for_function("() => document.querySelectorAll('#health .pill').length === 3")
+    lights = page.evaluate("() => [...document.querySelectorAll('#health .pill')].map(b => b.textContent + ':' + b.className)")
+    page.click("#health .pill.red")
+    health_ok = lights == ["Server:pill green", "Skriver:pill red", "Lokal modell:pill green"] \
+        and page.inner_text("#msg") == "Skriver: svarer ikke"
+
     # blank sheet
     page.click("#blank")
     blank = page.eval_on_selector("#canvas", "c => [c.width, c.height]")
@@ -159,5 +168,5 @@ assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/a
 print("full", full_h, "-> short card", short_h, "px high | ingredients added", ingredients_added)
 assert short_h < full_h * 0.7 and ingredients_added >= 3
 print("filter", tag, "->", shown, "of", total)
-assert tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and not errors
+assert tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and health_ok and not errors
 print("editor ok")

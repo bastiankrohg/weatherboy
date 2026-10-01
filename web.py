@@ -12,12 +12,16 @@ import os
 import socket
 import sys
 import threading
-from datetime import date
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import anthropic
 import qrcode
+import requests
 from PIL import Image, ImageEnhance, ImageOps
 
 import agent
@@ -25,10 +29,12 @@ import cookbook
 import daily
 import home
 import layout
+import local
 import presets
 import printer
 import router
 import shoplist
+import websearch
 import words
 
 PORT = 8615
@@ -132,6 +138,95 @@ def status():
         return {"state": f"svarer ikke på {PRINTER}", "level": "red"}
 
 
+def check_local():
+    """The free model: green on the first server (the desktop), yellow on a fallback or without the model pulled."""
+    for i, url in enumerate(local.SERVERS):
+        try:
+            r = requests.get(url.rstrip("/") + "/models", timeout=2)
+            r.raise_for_status()
+        except requests.RequestException:
+            continue
+        host = urlparse(url).hostname
+        names = {m.get("id", "") for m in r.json().get("data", [])}
+        if local.MODEL not in names and f"{local.MODEL}:latest" not in names:
+            return {"level": "yellow", "state": f"{host} svarer, men {local.MODEL} er ikke lastet ned"}
+        return {"level": "green" if i == 0 else "yellow", "state": host + ("" if i == 0 else " (reserve)")}
+    return {"level": "red", "state": "ingen svarer: " + ", ".join(urlparse(u).hostname or u for u in local.SERVERS)}
+
+
+def check_claude():
+    """Is the key there and accepted? Looking a model up is free."""
+    if not (agent.client.api_key or agent.client.auth_token):
+        return {"level": "off", "state": "ingen API-nøkkel"}
+    try:
+        agent.client.with_options(timeout=5, max_retries=0).models.retrieve("claude-haiku-4-5")
+        return {"level": "green", "state": f"klar · brukt ≈ ${agent.spent:.4f}"}
+    except anthropic.AuthenticationError:
+        return {"level": "red", "state": "nøkkelen ble avvist"}
+    except anthropic.APIError as e:
+        return {"level": "yellow", "state": f"svarer ikke ordentlig ({type(e).__name__})"}
+
+
+def check_tunnel():
+    """Round trip through Cloudflare back to this server. A 403 still means the tunnel works (we're not home)."""
+    if not PUBLIC_URL:
+        return {"level": "off", "state": "ikke satt opp"}
+    try:
+        code = requests.get(PUBLIC_URL + "/api/url", timeout=8).status_code
+    except requests.RequestException:
+        return {"level": "red", "state": "nede"}
+    if code in (200, 403):
+        return {"level": "green", "state": urlparse(PUBLIC_URL).hostname}
+    return {"level": "red", "state": f"nede (HTTP {code})"}
+
+
+def check_websearch():
+    """What the local model searches with: SearXNG if configured, else DuckDuckGo."""
+    target = websearch.SEARXNG or "https://html.duckduckgo.com/html/"
+    try:
+        requests.get(target, timeout=5, headers=websearch.UA).raise_for_status()
+        return {"level": "green", "state": "SearXNG" if websearch.SEARXNG else "DuckDuckGo"}
+    except requests.RequestException:
+        return {"level": "red", "state": "svarer ikke"}
+
+
+def check_daily():
+    s, done, today = daily.settings(), daily.done(), date.today().isoformat()
+    jobs = [j for j in daily.JOBS if s[j]]
+    if not jobs:
+        return {"level": "off", "state": "av"}
+    if all(done.get(j) == today for j in jobs):
+        return {"level": "green", "state": "skrevet ut i dag"}
+    hh, mm = map(int, s["time"].split(":"))
+    now = datetime.now()
+    if (now.hour, now.minute) >= (hh, mm) and PRINTER:  # due, but not out yet: retrying every minute
+        return {"level": "yellow", "state": f"venter på skriveren (fra kl. {s['time']})"}
+    return {"level": "green", "state": f"kl. {s['time']}"}
+
+
+CHECKS = {"printer": ("Skriver", status), "local": ("Lokal modell", check_local), "claude": ("Claude", check_claude),
+          "tunnel": ("Tunnel", check_tunnel), "websearch": ("Websøk", check_websearch), "daily": ("Daglig", check_daily)}
+_health = {"at": 0.0, "result": None}
+_health_lock = threading.Lock()
+
+
+def health():
+    """Every component checked on its own, all at once: one slow or broken part can't hold up the others or
+    take them down. Cached for 15 s, since every open page asks every 10 s."""
+    with _health_lock:
+        if _health["result"] is None or time.time() - _health["at"] > 15:
+            def run(check):
+                try:
+                    return check()
+                except Exception as e:  # a check that crashes is itself a red light, not a broken page
+                    return {"level": "red", "state": f"feil i sjekken: {type(e).__name__}"}
+            with ThreadPoolExecutor(len(CHECKS)) as pool:
+                found = dict(zip(CHECKS, pool.map(run, [c for _, c in CHECKS.values()])))
+            _health["result"] = [{"id": k, "label": CHECKS[k][0], **v} for k, v in found.items()]
+            _health["at"] = time.time()
+        return _health["result"]
+
+
 def recipes():
     rows = [r.split(" | ") for r in cookbook.list_recipes().splitlines() if " | " in r]
     return [{"name": r[0], "title": r[1], "tags": r[2], "draft": len(r) > 3} for r in rows]
@@ -171,8 +266,8 @@ class Handler(BaseHTTPRequestHandler):
     def _get(self, path):
         if path == "/":
             self.reply(200, PAGE.read_bytes(), "text/html; charset=utf-8")
-        elif path == "/api/status":
-            self.json(status())
+        elif path == "/api/health":
+            self.json(health())
         elif path == "/api/recipes":
             self.json(recipes())
         elif path == "/api/qr.png":  # for the page: scan the laptop screen with a phone

@@ -23,8 +23,9 @@
   .cloud { width: 46px; height: 29px; display: block; fill: none; stroke: currentColor; stroke-width: 3.5;
            stroke-linejoin: round; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .pill { margin-left: auto; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
-          color: var(--muted); white-space: nowrap; }
+  .health { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .pill { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+          background: none; color: var(--muted); white-space: nowrap; cursor: pointer; }
   .pill::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px;
                   background: var(--muted); vertical-align: 0; }
   .pill.green::before { background: #3fae4a; box-shadow: 0 0 0 3px rgb(63 174 74 / .2); }
@@ -125,7 +126,9 @@
 <body>
 <header>
   <h1><svg class="cloud" viewBox="0 0 64 40" aria-hidden="true"><path d="M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z"/></svg><span class="sr">Weatherboy</span></h1>
-  <span class="pill" id="status">Skriver: …</span>
+  <div class="health" id="health" role="status" aria-label="Status for delene av Weatherboy">
+    <button class="pill">Server</button>
+  </div>
 </header>
 <main>
   <section>
@@ -629,12 +632,23 @@ function renderRecipes() {
   }
 }
 
+// One light per part of the server (/api/health): green works, yellow degraded, red down, grey not set up.
+// Tap one for the details (phones have no hover).
 async function refreshStatus() {
-  const p = $("#status");
+  let parts;
   try {
-    const s = await (await fetch("/api/status")).json();
-    p.textContent = "Skriver: " + s.state; p.className = "pill " + s.level;
-  } catch { p.textContent = "Serveren svarer ikke"; p.className = "pill red"; }
+    const r = await fetch("/api/health");
+    parts = [{ label: "Server", level: "green", state: "svarer" }, ...await r.json()];
+  } catch { parts = [{ label: "Server", level: "red", state: "svarer ikke: siden er ikke koblet til" }]; }
+  const box = $("#health");
+  box.innerHTML = "";
+  for (const c of parts) {
+    const b = Object.assign(document.createElement("button"), { className: "pill " + c.level, textContent: c.label,
+                                                                 title: `${c.label}: ${c.state}` });
+    b.setAttribute("aria-label", `${c.label}: ${c.state}`);
+    b.onclick = () => say(`${c.label}: ${c.state}`, c.level === "red");
+    box.append(b);
+  }
 }
 // New recipe: the template (recipes/_mal.md) in a text box; preview renders it as the printed card
 $("#newrecipe").onclick = async () => {
