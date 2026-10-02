@@ -1,14 +1,16 @@
-"""Clicks through the web page in a real browser (your installed Edge): receipts, the image editor.
-Starts its own server without a printer, so nothing prints.
+"""Clicks through the web page in a real browser (your installed Edge): receipts, the image editor, the
+print queue. Starts its own server without a printer, so nothing prints.
 
-    uv run --with playwright test_web_ui.py            screenshots land in out/
+    uv run --extra ui test_web_ui.py            screenshots land in out/
 """
+import json
 import os
 
 from playwright.sync_api import sync_playwright
 
 import daily
 import presets
+import printq
 import shoplist
 import words
 import tempfile
@@ -17,6 +19,8 @@ from pathlib import Path
 
 shoplist.FILE = Path(tempfile.mkdtemp()) / "handleliste.json"  # never the flat's real list
 presets.FILE = Path(tempfile.mkdtemp()) / "presets.json"  # nor its real buttons
+printq.DATA = Path(tempfile.mkdtemp())  # nor the flat's real print queue
+printq.PEDIA, printq.FILE = printq.DATA / "printq", printq.DATA / "printq.json"
 daily.DATA = Path(tempfile.mkdtemp())  # nor the daily settings; and no Claude calls for the word
 daily.SETTINGS, daily.DONE = daily.DATA / "daglig.json", daily.DATA / "daglig_utskrevet.json"
 words.FILE = daily.DATA / "dagens_ord.json"
@@ -37,7 +41,9 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1200, "height": 1100})
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
-    page.on("response", lambda r: r.status >= 400 and errors.append(f"{r.status} {r.url}"))
+    # the one 500 the queue raises on purpose ("Skriv ut alt" with no printer) is checked where it happens
+    page.on("response", lambda r: r.status >= 400 and "/api/queue?print=all" not in r.url
+            and errors.append(f"{r.status} {r.url}"))
     page.goto(B)
 
     # a receipt, then the pencil: the canvas replaces the paper
@@ -127,6 +133,56 @@ with sync_playwright() as p:
     page.wait_for_function("() => current && current.kind === 'shopping' && document.querySelector('#paper img')")
     shop_ok = page.evaluate("() => current.ids.length === 2 && current.a.includes('- egg')")
 
+    # the print queue: with no printer, "Kø" is what everything does, and the list is yours to work with
+    page.wait_for_selector("#queue .msg")
+    empty_ok = page.inner_text("#queue .msg") == "Ingenting i køen." and page.is_disabled("#queueprint")
+    for n, card in enumerate(["", "[data-card=art]", "[data-card=qr]"], start=1):
+        if card:
+            new_preview(card)   # the shopping list is the one already on the paper
+        page.click("#ko")
+        page.wait_for_function("n => document.querySelectorAll('#queue li:not(.msg)').length === n", arg=n)
+    labels = page.evaluate("() => queue.map(j => j.label)")
+    queued_ok = labels == ["handleliste", "kunst", "qr-kode"] and page.inner_text("#queueprint") == "Skriv ut alt"
+
+    # ▲ and ▼ move one step in the order, and stop at the ends instead of wrapping
+    page.click("#queue li:nth-child(3) .qbar button:nth-child(1)")   # ▲ on the last one
+    page.wait_for_function("() => queue.map(j => j.label).join() === 'handleliste,qr-kode,kunst'")
+    page.click("#queue li:nth-child(1) .qbar button:nth-child(2)")   # ▼ on the first one
+    page.wait_for_function("() => queue.map(j => j.label).join() === 'qr-kode,handleliste,kunst'")
+    with page.expect_response("**/api/queue?move=*") as moved:       # ▲ on the first one: already at the top
+        page.click("#queue li:nth-child(1) .qbar button:nth-child(1)")
+    order_kept = [j["label"] for j in json.loads(moved.value.text())["items"]] == \
+                 ["qr-kode", "handleliste", "kunst"]
+
+    # ⏸ holds one back: it's skipped by the printer, but never dropped
+    page.click("#queue li:nth-child(1) .qbar button:nth-child(3)")
+    page.wait_for_function("() => document.querySelectorAll('#queue li.held').length === 1")
+    held_ok = page.evaluate("() => queue[0].hold") and "holdt" in page.inner_text("#queue li.held small")
+
+    # ✎ opens the job's own stored PNG in the editor, and "Bruk endringene" writes it back to the queue
+    ed_id = printq.items()[0]["id"]
+    before_png = printq.png_path(ed_id).read_bytes()
+    page.click("#queue li:nth-child(1) .qbar button:nth-child(4)")
+    page.wait_for_selector("#canvas", state="visible")
+    opened = page.evaluate("() => ed.job && ed.job.id") == ed_id
+    page.click("#rotr")
+    page.click("#done")
+    page.wait_for_function("() => document.querySelector('#msg').textContent === 'Endret i køen.'")
+    page.wait_for_function("n => document.querySelectorAll('#queue li:not(.msg)').length === n", arg=3)
+    edited_ok = (opened and printq.png_path(ed_id).read_bytes() != before_png
+                 and [j["id"] for j in printq.items()][0] == ed_id)  # same job, same place, new picture
+
+    # × drops one; "Skriv ut alt" with no printer complains and loses nothing; "Tøm" empties it
+    page.click("#queue li:nth-child(1) .qbar button:nth-child(5)")
+    page.wait_for_function("() => document.querySelectorAll('#queue li:not(.msg)').length === 2")
+    page.click("#queueprint")
+    page.wait_for_function("() => document.querySelector('#msg').classList.contains('bad')")
+    kept_ok = page.evaluate("() => queue.length") == 2 and printq.count()[0] == 2
+    page.once("dialog", lambda dlg: dlg.accept())
+    page.click("#queueclear")
+    page.wait_for_selector("#queue .msg")
+    cleared_ok = page.inner_text("#queue .msg") == "Ingenting i køen." and printq.count() == (0, 0)
+
     # a wished-for preset shows as a button, and × removes it (after a confirm)
     page.wait_for_selector(".preset button")
     preset_label = page.inner_text(".preset button")
@@ -160,13 +216,21 @@ with sync_playwright() as p:
     browser.close()
 server.shutdown()
 
+# Chromium logs every 500 to the console as well as the network; the queue raises one on purpose, so that
+# single message is separated from the ones that would mean something is actually broken.
+asked_for = [e for e in errors if "status of 500" in e]
+other = [e for e in errors if "status of 500" not in e]
+
 print("preview", first, "| canvas", size, "| crop", {k: round(v) for k, v in crop.items()})
 print("ink pixels", inked, "-> undo ->", undone, "| rotated canvas", rotated, "| applied", final, path)
-print("blank", blank, tool, "| page errors:", errors or "none")
+print("blank", blank, tool, "| page errors:", other or "none")
 assert size == first and crop["y"] == 0 and crop["x"] == 0 and crop["w"] == size[0] and inked > 100 and undone == 0
 assert rotated == [size[1], size[0]] and final[0] == 576 and path.startswith("/api/image") and blank == [576, 800]
 print("full", full_h, "-> short card", short_h, "px high | ingredients added", ingredients_added)
 assert short_h < full_h * 0.7 and ingredients_added >= 3
 print("filter", tag, "->", shown, "of", total)
-assert tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and health_ok and not errors
+print("queue", labels, "->", "held, edited, kept on a failed print-all, then cleared")
+assert (tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and health_ok
+        and empty_ok and queued_ok and order_kept and held_ok and edited_ok and kept_ok and cleared_ok
+        and not other and len(asked_for) == 1)   # exactly one deliberate 500: "Skriv ut alt" with no printer
 print("editor ok")

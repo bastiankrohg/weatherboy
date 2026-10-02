@@ -1,7 +1,7 @@
 """One transcript in, one decision out: the routing shared by the handset (main.py) and any other speech
 pipeline posting transcripts to the web server (/api/voice). Keywords make a card without a model, the password
-starts a call, longer sentences go to the model. route() only decides and renders; the caller prints, plays
-tones or speaks."""
+starts a call, nlp reads the time, place and stop out of a longer sentence, and only what's left goes to the
+model. route() only decides and renders; the caller prints, plays tones or speaks."""
 import os
 import re
 from difflib import get_close_matches
@@ -9,6 +9,7 @@ from difflib import get_close_matches
 import agent
 import cookbook
 import layout
+import nlp
 
 COMMANDS = {  # short utterances (1-3 words) that skip the model. NB-Whisper writes English words in Norwegian.
     "weather": ["weather", "vær", "været", "værmelding", "yr"],
@@ -55,7 +56,17 @@ def route(text, cards, call=False, password=PASSWORD):
         return {"kind": "answer", "cmd": cmd, "say": answer, "text": answer, "cost": dollars}
     if cmd == "chat":
         return {"kind": "call", "cmd": cmd, "say": GREETING}
-    if cmd in cards:
+    # A sentence can still be a receipt: "tog fra Røros" is a departures board for Røros, not the fuzzy
+    # keyword match on "tog", and "hva blir været i Bergen i morgen" is a forecast for Bergen tomorrow -
+    # neither needs a model. nlp only answers when it's sure (None is "no rule", ESCALATE is "the model's")
+    # and if it then can't fetch, we fall through rather than leaving the person with nothing.
+    try:
+        hit = nlp.match(text)
+        if isinstance(hit, dict) and hit["intent"] in cards:
+            return {"kind": "card", "cmd": hit["intent"], "image": cards[hit["intent"]](**hit["args"])}
+    except Exception as e:  # noqa: BLE001 - no network, an API down, a stop that has gone: never lose the call
+        print(f"router: nlp could not use {text!r} ({e})")
+    if cmd in cards:  # one or two words the keywords know, the way they always did
         return {"kind": "card", "cmd": cmd, "image": cards[cmd]()}
     if len(text.split()) < 2:  # ponytail: drops coughs and whisper's one-word hallucinations
         return {"kind": "ignored", "cmd": cmd}

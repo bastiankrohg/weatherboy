@@ -121,6 +121,21 @@
             border-radius: 2px; box-shadow: 0 1px 4px rgb(0 0 0 / .18); }
   .editor textarea { min-height: 160px; font-size: 14px; }
   .editor .row { margin-top: 8px; }
+  .queue { list-style: none; margin: 0; padding: 0; }
+  .queue li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .queue .thumb { width: 44px; height: 58px; flex: 0 0 auto; object-fit: cover; object-position: top center;
+                   background: var(--paper); border: 1px solid var(--line); border-radius: 2px; image-rendering: pixelated; }
+  .queue .what { flex: 1; min-width: 0; }
+  .queue .what b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue .what small { color: var(--muted); }
+  .queue .held .what b, .queue .held small { color: var(--muted); }
+  .queue .held .thumb { opacity: .45; }
+  .queue .qbar { display: flex; gap: 0; flex: 0 0 auto; }
+  .queue .qbar button { border: 0; background: none; color: var(--muted); padding: 5px 6px; font-size: 15px; line-height: 1; }
+  .queue .qbar button:hover { color: var(--ink); }
+  .queue .qbar button[aria-pressed="true"] { color: var(--accent); }
+  #queuemsg { margin-top: 0; margin-left: auto; }
+  #queueprint { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -162,6 +177,16 @@
         <button id="d-preview">Vis dagens ord</button>
         <button id="d-off">Stopp alt</button>
         <span class="msg" id="d-status"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Utskriftskø</h2>
+      <ul class="queue" id="queue"></ul>
+      <div class="row shopactions">
+        <button id="queueprint">Skriv ut alt</button>
+        <button id="queueclear">Tøm</button>
+        <span class="msg" id="queuemsg"></span>
       </div>
     </div>
 
@@ -224,6 +249,7 @@
       <label class="slider">Kontrast <input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1"><output>1.00</output></label>
       <div class="actions">
         <button class="primary" id="print" disabled>Skriv ut</button>
+        <button id="ko" disabled title="Legg denne i køen: den skriver ut så snart skriveren er klar">Kø</button>
         <button class="icon" id="edit" disabled aria-pressed="false" title="Rediger: beskjær, roter, tegn, endre tekst" aria-label="Rediger">
           <svg viewBox="0 0 24 24"><path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M13.5 6.5l4 4"/></svg>
         </button>
@@ -268,29 +294,33 @@ let editing = false;
 
 function say(text, bad = false) { const m = $("#msg"); m.textContent = text; m.classList.toggle("bad", bad); }
 
-async function receipt(path, body = null, type = null, print = false) {
+// Every receipt comes back as a PNG; the server says in the headers whether it went on paper or into the queue
+async function receipt(path, body = null, type = null, print = false, queue = false) {
   const params = new URLSearchParams();
   if (print) params.set("print", "1");
+  if (queue) params.set("queue", "1");
   for (const k of ["brightness", "contrast"]) if ($("#" + k).value !== "1") params.set(k, $("#" + k).value);
   const url = params.size ? path + (path.includes("?") ? "&" : "?") + params : path;
   const r = await fetch(url, { method: "POST", body, headers: type ? { "Content-Type": type } : {} });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-  return URL.createObjectURL(await r.blob());
+  const why = r.headers.get("X-Why");
+  return { url: URL.createObjectURL(await r.blob()), queued: r.headers.get("X-Queued"),
+           why: why ? decodeURIComponent(why) : null };
 }
 
 // current.q / current.a are set for Claude's answers: those are the ones with editable text
 async function preview(path, body = null, type = null, extra = {}) {
   current = { path, body, type, ...extra };
-  $("#print").disabled = $("#edit").disabled = true;
+  $("#print").disabled = $("#edit").disabled = $("#ko").disabled = true;
   say("Lager forhåndsvisning …");
   try {
-    const src = await receipt(path, body, type);
+    const { url } = await receipt(path, body, type);
     if (current?.path !== path || current.body !== body) return;  // a newer preview won
-    const img = Object.assign(new Image(), { src, alt: "Forhåndsvisning av kvitteringen" });
+    const img = Object.assign(new Image(), { src: url, alt: "Forhåndsvisning av kvitteringen" });
     await img.decode();
     $("#paper").innerHTML = "";
     $("#paper").append(img);
-    $("#print").disabled = $("#edit").disabled = false;
+    $("#print").disabled = $("#edit").disabled = $("#ko").disabled = false;
     say("");
     recipeActions();
     if (matchMedia("(max-width: 820px)").matches) $("#paper").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -301,18 +331,32 @@ $("#print").onclick = async () => {
   $("#print").disabled = true;
   say("Skriver ut …");
   try {
-    await receipt(current.path, current.body, current.type, true);
-    say("Skrevet ut ✓");
-    if (current.kind === "shopping") loadShop();  // the server marked them "printet"
+    const r = await receipt(current.path, current.body, current.type, true);
+    if (r.queued) { say(`Lagt i køen: ${r.why}.`); loadQueue(); }
+    else {
+      say("Skrevet ut ✓");
+      if (current.kind === "shopping") loadShop();  // the server marked them "printet"
+    }
   } catch (e) { say(e.message, true); }
   $("#print").disabled = false;
   refreshStatus();
 };
 
+$("#ko").onclick = async () => {
+  $("#ko").disabled = true;
+  try {
+    const r = await receipt(current.path, current.body, current.type, false, true);
+    say(r.queued ? "Lagt i køen. Den går ut så snart skriveren tar imot." : r.why, !r.queued);
+    if (r.queued) loadQueue();
+  } catch (e) { say(e.message, true); }
+  $("#ko").disabled = false;
+  refreshStatus();
+};
+
 // The editor: every receipt is an image. The pencil fetches the receipt's grayscale original (?raw=1) into a
 // canvas; crop, rotation and drawing happen here; "Bruk endringene" sends the result to /api/image, which then
-// previews and prints like everything else.
-const ed = { base: null, ink: null, crop: null, tool: "pen", undo: [], dither: false, penSeen: false };
+// previews and prints like everything else. For a queued job it goes back to the queue instead.
+const ed = { base: null, ink: null, crop: null, tool: "pen", undo: [], dither: false, penSeen: false, job: null };
 const cv = $("#canvas");
 
 $("#edit").onclick = async () => {
@@ -335,12 +379,13 @@ $("#blank").onclick = () => {
   if (matchMedia("(max-width: 820px)").matches) cv.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
-function openEditor(image, dither, tool) {
+function openEditor(image, dither, tool, job = null) {
   ed.base = layer(image.width, image.height, x => x.drawImage(image, 0, 0));
   ed.ink = layer(image.width, image.height);
   ed.crop = { x: 0, y: 0, w: image.width, h: image.height };
   ed.undo = [];
   ed.dither = dither;
+  ed.job = job;
   editing = true;
   setTool(tool);
   showEditor();
@@ -467,7 +512,12 @@ $("#done").onclick = () => {
     x.drawImage(base, -crop.x, -crop.y);
     x.drawImage(ink, -crop.x, -crop.y);
   });
-  out.toBlob(blob => { closeEditor(); preview(`/api/image?dither=${ed.dither ? 1 : 0}`, blob, "image/png"); }, "image/png");
+  out.toBlob(blob => {
+    const job = ed.job;                       // a queued job goes back into the queue, not the preview
+    closeEditor();
+    if (job) { queuePost(`replace=${job.id}`, blob); say("Endret i køen."); }
+    else preview(`/api/image?dither=${ed.dither ? 1 : 0}`, blob, "image/png");
+  }, "image/png");
 };
 $("#apply").onclick = () => {
   const a = $("#edittext").value;
@@ -735,6 +785,75 @@ $("#shopprint").onclick = () => {
   preview("/api/text", JSON.stringify({ kind: "shopping", a, ids }), "application/json", { a, kind: "shopping", ids });
 };
 
+// The print queue: whatever wouldn't go on paper waits here, in order, and is yours to rearrange while it
+// waits. The server empties it by itself as soon as the printer takes jobs again; held jobs are skipped, never
+// dropped. One verb per request, in the query string, and the whole list comes back every time.
+let queue = [];
+const qbtn = (text, title, on, fn) => {
+  const b = Object.assign(document.createElement("button"), { textContent: text, title, ariaLabel: title, onclick: fn });
+  if (on !== undefined) b.setAttribute("aria-pressed", on);
+  return b;
+};
+
+function renderQueue() {
+  const list = $("#queue");
+  list.innerHTML = queue.length ? "" : '<li class="msg">Ingenting i køen.</li>';
+  queue.forEach(j => {
+    const li = document.createElement("li");
+    if (j.hold) li.className = "held";
+    const what = Object.assign(document.createElement("span"), { className: "what" });
+    what.append(Object.assign(document.createElement("b"), { textContent: j.label }));
+    what.append(Object.assign(document.createElement("small"), { textContent: `${j.hold ? "holdt · " : ""}${fmt(j.added)}` }));
+    const bar = Object.assign(document.createElement("span"), { className: "qbar" });
+    bar.append(
+      qbtn("▲", `Flytt «${j.label}» frem`, undefined, () => queuePost(`move=${j.id}&delta=-1`)),
+      qbtn("▼", `Flytt «${j.label}» bak`, undefined, () => queuePost(`move=${j.id}&delta=1`)),
+      qbtn(j.hold ? "▶" : "⏸", j.hold ? "Ikke hold lenger" : "Hold til senere", !!j.hold,
+           () => queuePost(`hold=${j.id}&on=${j.hold ? 0 : 1}`)),
+      qbtn("✎", `Rediger «${j.label}»`, undefined, () => editQueued(j)),
+      qbtn("×", `Fjern «${j.label}»`, undefined, () => queuePost(`remove=${j.id}`)));
+    li.append(Object.assign(new Image(), { className: "thumb", src: `/api/queue/${j.id}.png?v=${j.added}`,
+                                           alt: "", loading: "lazy" }), what, bar);
+    list.append(li);
+  });
+  $("#queueprint").disabled = !queue.length;
+  $("#queueclear").disabled = !queue.length;
+}
+
+async function queuePost(query, body) {
+  const r = await fetch("/api/queue?" + query, { method: "POST", body });
+  const d = await r.json();
+  if (!r.ok) { say(d.error, true); return null; }
+  queue = d.items;
+  renderQueue();
+  return d;
+}
+
+async function loadQueue() { try { queue = (await (await fetch("/api/queue")).json()).items; renderQueue(); } catch {} }
+
+async function editQueued(j) {
+  try {
+    const r = await fetch(`/api/queue/${j.id}.png`);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    current = { path: null, body: null, type: null };  // this edit isn't about the preview on screen
+    $("#paper").innerHTML = ""; $("#print").disabled = $("#ko").disabled = true;  // ...so show none
+    openEditor(await createImageBitmap(await r.blob()), j.dither, "crop", j);
+    say("");
+  } catch (e) { say(e.message, true); }
+}
+
+$("#queueprint").onclick = async () => {
+  const d = await queuePost("print=all");
+  if (!d) return;
+  say(d.printed ? `Skrev ut ${d.printed}. Resten står i køen.` : "Ingenting kom ut. Køen står fortsatt.");
+  loadQueue();
+};
+$("#queueclear").onclick = async () => {
+  if (queue.length && !confirm(`Tømme køen (${queue.length})?`)) return;
+  await queuePost("clear=1");
+  say("");
+};
+
 // Daily prints: art and word of the day at a set time; each switch saves at once
 async function daily(changes) {
   const r = changes
@@ -758,9 +877,10 @@ $("#d-time").onchange = () => $("#d-time").value && daily({ time: $("#d-time").v
 $("#d-off").onclick = () => daily({ art: false, word: false });
 $("#d-preview").onclick = () => preview("/api/card/word?lang=" + $("#d-lang").value);
 
-refreshStatus(); setInterval(() => { refreshStatus(); loadShop(); }, 10000);
+refreshStatus(); setInterval(() => { refreshStatus(); loadShop(); loadQueue(); }, 10000);
 daily();
 loadShop();
+loadQueue();
 loadPresets();
 loadModels();
 loadStops();

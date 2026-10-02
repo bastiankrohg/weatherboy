@@ -3,7 +3,9 @@
     python web.py --printer 192.168.0.217      just the web page (main.py starts it too, see --web)
 
 Every endpoint that makes a receipt returns its PNG preview, decoded from the actual job bytes. Printing is
-?print=1 on the same request, so the page previews first and prints as a second, deliberate tap.
+?print=1 on the same request, so the page previews first and prints as a second, deliberate tap. A printer that
+is off, busy or out of paper doesn't lose the job: it lands in printq's queue and goes out when it can, and the
+reply says so in X-Queued.
 ponytail: no login. Anyone on the LAN can print and spend API credit. Add a shared password if the flat grows.
 """
 import io
@@ -17,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import anthropic
 import qrcode
@@ -32,6 +34,7 @@ import layout
 import local
 import presets
 import printer
+import printq
 import router
 import shoplist
 import websearch
@@ -58,12 +61,53 @@ def lan_ip():
         except OSError:  # no network at all
             return "127.0.0.1"
 
-CARDS = {  # the keyword receipts, shared with main.py
-    "weather": lambda: layout.weather(agent.PLACE, agent.forecast()),
-    "departures": lambda stop=0: layout.departures(*agent.calls(agent.STOPS[stop][0], 10, agent.STOPS[stop][1])),
-    "flights": lambda: layout.radar(agent.PLACE, agent.LAT, agent.LON, agent.aircraft(radius_km=40), 40),
-    "art": lambda: layout.maze(date.today()),
-    "qr": lambda: layout.qr(URL),
+def _at(when):
+    """nlp.match() answers with a When (a start and an end); the receipt header stamps the start."""
+    return when.start if when else None
+
+
+def _hours(when, default=24):
+    """How much forecast a receipt asked for a time needs: 'i kveld' is 7 hours, 'i morgen' is 18."""
+    return default if not when else max(1, min(48, round((when.end - when.start).total_seconds() / 3600)))
+
+
+def _weather(place=None, when=None):
+    """The forecast, for the place nlp worked out or the configured one, over the time it worked out.
+    Both are None when nothing was said, which is the same receipt the page's own button gets."""
+    lat, lon = (place.lat, place.lon) if place else (agent.LAT, agent.LON)
+    return layout.weather(place.name if place else agent.PLACE, agent.forecast(lat, lon, _hours(when)), _at(when))
+
+
+def _departures(stop=None, mode=None, when=None):
+    """Departures from the stop nlp named, else the configured first one; only the mode it heard.
+    agent.calls resolves the stop and returns it with the board, so nothing is named twice, and no mode
+    at all is every mode - a stop configured without one, or an utterance that didn't say, still gets all."""
+    if stop is None:  # nothing heard at all: the default board, with whatever the default mode is
+        stop, mode = agent.STOPS[0][0], agent.STOPS[0][1]
+    return layout.departures(*agent.calls(stop, 10, mode), _at(when))
+
+
+def _flights(place=None, when=None):
+    """Aircraft over the place nlp worked out, or the configured one."""
+    lat, lon = (place.lat, place.lon) if place else (agent.LAT, agent.LON)
+    return layout.radar(place.name if place else agent.PLACE, lat, lon,
+                        agent.aircraft(lat, lon, radius_km=40), 40, _at(when))
+
+
+def _art(when=None):
+    """The day's maze, seeded by its date so the same day always prints the same one."""
+    day = when.start.date() if when else date.today()
+    return layout.maze(day, _at(when))
+
+
+def _word(lang=None):
+    """Today's word, in the language asked for, else the daily setting's. Cached after the first call."""
+    return word_card(lang or daily.settings()["lang"])
+
+
+CARDS = {  # the keyword receipts, shared with main.py. The keyword arguments are what nlp.match() works out.
+    "weather": _weather, "departures": _departures, "flights": _flights, "art": _art,
+    "qr": lambda when=None: layout.qr(URL, _at(when)), "word": _word,
 }
 
 
@@ -80,11 +124,26 @@ def edits(q):
             "contrast": clamp(float(q.get("contrast", 1)), 0.2, 4.0)}
 
 
-def render(img, do_print, brightness=1.0, contrast=1.0, dither=False):
+LABELS = {"weather": "vær", "departures": "avganger", "flights": "fly", "art": "kunst", "qr": "qr-kode",
+          "word": "dagens ord"}
+BY_KIND = {"card": "kvittering", "answer": "svar", "print": "utskrift"}
+
+
+def label_for(kind, cmd):
+    """What a queued receipt should be called in the list: the card's name, or the sort of thing."""
+    return LABELS.get(cmd) or BY_KIND.get(kind, "kvittering")
+
+
+def render(img, do_print, brightness=1.0, contrast=1.0, dither=False, label="kvittering", source=None,
+           queue=False, printer_ip=None):
     """Every receipt goes through here: grayscale page -> brightness/contrast -> threshold (text) or Atkinson
-    dither (pictures) -> printer rows. Returns the PNG of exactly what the head fires; prints it too when
-    do_print. On text, brightness moves the threshold across the antialiased edges: brighter prints thinner
-    strokes, darker prints bolder ones. Crops, rotations and drawings happen in the page's editor (/api/image)."""
+    dither (pictures) -> printer rows. Returns (the PNG of exactly what the head fires, what happened to it).
+
+    do_print sends it now and queue puts it in the queue without trying. A printer that won't take it leaves it
+    in the queue either way - nothing is lost - so outcome is {"printed", "id" of the queued job or None, "why"}.
+    printer_ip defaults to the server's; main.py passes its own, since it prints from the handset.
+    On text, brightness moves the threshold across the antialiased edges: brighter prints thinner strokes, darker
+    prints bolder ones. Crops, rotations and drawings happen in the page's editor (/api/image)."""
     img = img.convert("L")
     if brightness != 1:
         img = ImageEnhance.Brightness(img).enhance(brightness)
@@ -93,13 +152,14 @@ def render(img, do_print, brightness=1.0, contrast=1.0, dither=False):
     if dither:
         img = layout.dither(img)
     job = printer.encode(layout.to_rows(img))
-    if do_print:
-        if not PRINTER:
-            raise ValueError("No printer configured: start with --printer <ip>")
-        printer.send(job, PRINTER)
+    outcome = {"printed": False, "id": None, "why": None}
+    if queue:
+        outcome = {"printed": False, "id": printq.add(img, label, source, dither=dither)["id"], "why": "lagt i køen"}
+    elif do_print:
+        outcome = printq.print_or_queue(img, label, source, printer_ip or PRINTER, dither=dither)
     buf = io.BytesIO()
     layout.from_rows(printer.decode(job)).save(buf, "PNG")
-    return buf.getvalue()
+    return buf.getvalue(), outcome
 
 
 def answer_json(answer, dollars, icon=None):
@@ -123,19 +183,26 @@ def printer_here():
 
 
 def status():
-    """green: ready. yellow: on the network but won't print. red: can't reach it. off: no printer configured."""
+    """green: ready. yellow: on the network but won't print. red: can't reach it. off: no printer configured.
+    Anything waiting rides along on the printer's own light, which is where you'd look for it anyway."""
     if not PRINTER:
-        return {"state": "ingen skriver valgt", "level": "off"}
-    try:
-        asb = printer.status(PRINTER)
-        if not asb:
-            return {"state": "opptatt, svarer ikke på status", "level": "yellow"}
-        bad = printer.problems(asb)
-        return {"state": ", ".join(bad) or "klar", "level": "yellow" if bad else "green"}
-    except ConnectionRefusedError:  # what this printer does with its cover open
-        return {"state": "avviser tilkobling (lokket åpent?)", "level": "yellow"}
-    except OSError:
-        return {"state": f"svarer ikke på {PRINTER}", "level": "red"}
+        s = {"state": "ingen skriver valgt", "level": "off"}
+    else:
+        try:
+            asb = printer.status(PRINTER)
+            if not asb:
+                s = {"state": "opptatt, svarer ikke på status", "level": "yellow"}
+            else:
+                bad = printer.problems(asb)
+                s = {"state": ", ".join(bad) or "klar", "level": "yellow" if bad else "green"}
+        except ConnectionRefusedError:  # what this printer does with its cover open
+            s = {"state": "avviser tilkobling (lokket åpent?)", "level": "yellow"}
+        except OSError:
+            s = {"state": f"svarer ikke på {PRINTER}", "level": "red"}
+    jobs, _ = printq.count()
+    if jobs:
+        s["state"] += f" · {jobs} i kø"
+    return s
 
 
 def check_local():
@@ -232,6 +299,37 @@ def recipes():
     return [{"name": r[0], "title": r[1], "tags": r[2], "draft": len(r) > 3} for r in rows]
 
 
+def queue_state(**extra):
+    """What the page needs to draw the queue: the jobs in order, and how many are on hold."""
+    jobs, held = printq.count()
+    return {"items": printq.items(), "count": jobs, "held": held, **extra}
+
+
+def queue_post(q, body):
+    """The queue, from the page: one verb per request, in the query string like ?print=1, and a raw PNG
+    body where there's an image. -> queue_state(), so the list redraws from every one of them.
+
+    Only what the page actually does. Printing one job out of turn isn't here on purpose: hold the rest
+    instead, so there's one order to reason about."""
+    if "replace" in q:      # the page's editor changed this one; same id, same place in the order
+        printq.replace_img(q["replace"], Image.open(io.BytesIO(body)))
+    elif "print" in q:      # everything not held, in order; stops at the first refusal, keeps the rest
+        if not PRINTER:
+            raise ValueError("Ingen skriver er valgt: start med --printer <ip>")
+        return queue_state(printed=printq.print_now(PRINTER))
+    elif "clear" in q:
+        printq.remove([j["id"] for j in printq.items()])
+    elif "remove" in q:
+        printq.remove([i for i in q["remove"].split(",") if i])
+    elif "move" in q:       # one step up the queue (-1) or down (+1); nothing happens at either end
+        printq.move(q["move"], int(q.get("delta", -1)))
+    elif "hold" in q:       # held jobs are skipped by the printer, never dropped
+        printq.hold(q["hold"], q.get("on") == "1")
+    else:
+        raise ValueError("Ukjent kommando for utskriftskøen")
+    return queue_state()
+
+
 class Handler(BaseHTTPRequestHandler):
     def reply(self, code, body, ctype, headers=()):
         self.send_response(code)
@@ -294,17 +392,35 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/models":
             self.json({"model": agent.model, "spent": agent.spent,
                        "models": [{"id": k, "name": v["name"], "price": v["price"]} for k, v in agent.MODELS.items()]})
+        elif path == "/api/queue":
+            self.json(queue_state())
+        elif path.startswith("/api/queue/") and path.endswith(".png"):  # a job's thumbnail, and what ✎ opens
+            id = path[len("/api/queue/"):-len(".png")]
+            png = printq.png_path(id)
+            if not printq.get(id) or not png.exists():
+                return self.json({"error": "not found"}, 404)
+            self.reply(200, png.read_bytes(), "image/png")
         else:
             self.json({"error": "not found"}, 404)
 
-    def receipt(self, img, q, dither=False):
-        """Every receipt endpoint ends here. ?raw=1 hands the page's image editor the grayscale original
-        (X-Dither says whether it's a picture); otherwise it's rendered, and printed with ?print=1."""
+    def receipt(self, img, q, dither=False, label="kvittering", source=None):
+        """Every receipt endpoint ends here. ?raw=1 hands the page's editor the grayscale original
+        (X-Dither says whether it's a picture); otherwise it's rendered, and printed with ?print=1.
+        ?queue=1 skips the printer and puts it in the queue to print next. X-Queued or X-Printed says
+        which of the two happened, X-Why what stopped it - and a plain preview has neither, because
+        nothing was asked of the printer. -> what happened, for the caller."""
         if q.get("raw") == "1":
             buf = io.BytesIO()
             img.convert("L").save(buf, "PNG")
-            return self.reply(200, buf.getvalue(), "image/png", [("X-Dither", "1" if dither else "0")])
-        self.reply(200, render(img, q.get("print") == "1", **edits(q), dither=dither), "image/png")
+            self.reply(200, buf.getvalue(), "image/png", [("X-Dither", "1" if dither else "0")])
+            return {"printed": False, "id": None, "why": None}
+        png, outcome = render(img, q.get("print") == "1", **edits(q), dither=dither, label=label,
+                              source=source, queue=q.get("queue") == "1")
+        headers = [("X-Queued", outcome["id"])] if outcome["id"] else [("X-Printed", "1")] if outcome["printed"] else []
+        if outcome["why"]:  # percent-encoded: a header may only carry latin-1
+            headers.append(("X-Why", quote(outcome["why"], safe="")))
+        self.reply(200, png, "image/png", headers)
+        return outcome
 
     def do_POST(self):
         if not self.home_only():
@@ -321,10 +437,13 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/voice":  # a transcript from any speech pipeline, routed like the handset's
                 d = json.loads(body)
                 r = router.route(d["text"], CARDS, call=bool(d.get("call")))
-                printed = "image" in r and d.get("print", True)
-                if printed:
-                    render(r.pop("image"), True)
-                self.json({k: v for k, v in r.items() if k != "image"} | {"printed": bool(printed)})
+                wanted = "image" in r and d.get("print", True)
+                outcome = {"printed": False, "id": None, "why": None}
+                if wanted:
+                    _, outcome = render(r.pop("image"), True, label=label_for(r["kind"], r.get("cmd")),
+                                        source={"text": d["text"], "call": bool(d.get("call"))})
+                self.json({k: v for k, v in r.items() if k != "image"}
+                          | {"printed": bool(wanted) and outcome["printed"], "queued": outcome["id"]})
             elif url.path == "/api/preset":  # a wished-for button: its prompt, asked like a question
                 p = presets.get(json.loads(body)["id"])
                 self.json(answer_json(*agent.ask(p["prompt"]), icon=p["icon"]))
@@ -334,8 +453,10 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/daily":  # switch the daily prints on/off, pick the language or the time
                 daily.update(json.loads(body))
                 self.json({"settings": daily.settings(), "done": daily.done()})
+            elif url.path == "/api/queue":
+                self.json(queue_post(q, body))
             elif url.path == "/api/card/word":  # ?lang=ko: today's word, cached, so previews are free
-                self.receipt(word_card(q.get("lang") or daily.settings()["lang"]), q)
+                self.receipt(word_card(q.get("lang") or daily.settings()["lang"]), q, label="dagens ord")
             elif url.path == "/api/presets":
                 presets.remove(json.loads(body)["remove"])
                 self.json(presets.items())
@@ -357,14 +478,18 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/text":  # everything printed from text: answers, recipes, lists
                 d = json.loads(body)
                 if d.get("kind") == "short":
-                    return self.receipt(layout.recipe_short(d["a"]), q)
+                    return self.receipt(layout.recipe_short(d["a"]), q, label="oppskrift (kort)",
+                                        source={"q": d.get("q", ""), "kind": "short"})
                 if d.get("kind") == "shopping":
-                    self.receipt(layout.recipe(d["a"], icon="shopping"), q)
-                    if q.get("print") == "1":  # only once it's really on paper: "printet" on the page
+                    outcome = self.receipt(layout.recipe(d["a"], icon="shopping"), q, label="handleliste",
+                                           source=d.get("ids"))
+                    if outcome["printed"]:  # only once it's really on paper: "printet" on the page
                         shoplist.mark_printed(d.get("ids", []))
                     return
-                self.receipt(layout.recipe(d["a"]) if layout.is_recipe(d["a"])
-                             else layout.answer(d["q"], d["a"], icon=d.get("icon", "question")), q)
+                answer = layout.recipe(d["a"]) if layout.is_recipe(d["a"]) else layout.answer(
+                    d["q"], d["a"], icon=d.get("icon", "question"))
+                self.receipt(answer, q, label="oppskrift" if layout.is_recipe(d["a"]) else "svar",
+                             source={"q": d.get("q", "")})
             elif url.path == "/api/recipes":  # a recipe typed on the page, or an edited one saved back
                 d = json.loads(body)
                 if d.get("name"):
@@ -373,19 +498,20 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.json({"name": cookbook.add(d["markdown"])})
             elif url.path == "/api/photo":
-                self.receipt(photo(body), q, dither=True)
+                self.receipt(photo(body), q, dither=True, label="foto")
             elif url.path == "/api/image":  # the page's image editor: crops, rotations and drawings come back here
                 img = ImageOps.exif_transpose(Image.open(io.BytesIO(body))).convert("L")
                 if img.width != layout.DOTS:  # rotated or drawn at another size: fit the paper width
                     img = img.resize((layout.DOTS, max(1, round(img.height * layout.DOTS / img.width))), Image.LANCZOS)
-                self.receipt(img, q, dither=q.get("dither") == "1")
-            elif url.path == "/api/card/departures":  # ?stop= picks a board from agent.STOPS
+                self.receipt(img, q, dither=q.get("dither") == "1", label=q.get("label", "bilde"))
+            elif url.path == "/api/card/departures":  # ?stop= picks a board from agent.STOPS, by index as the page sends it
                 stop = int(q.get("stop", 0))
                 if not 0 <= stop < len(agent.STOPS):
                     raise ValueError(f"No stop number {stop}")
-                self.receipt(CARDS["departures"](stop), q)
+                self.receipt(CARDS["departures"](stop=agent.STOPS[stop][0], mode=agent.STOPS[stop][1]), q,
+                             label="avganger")
             elif url.path.startswith("/api/card/") and url.path[10:] in CARDS:
-                self.receipt(CARDS[url.path[10:]](), q)
+                self.receipt(CARDS[url.path[10:]](), q, label=label_for("card", url.path[10:]))
             else:
                 self.json({"error": "not found"}, 404)
         except Exception as e:  # one bad request shouldn't take the server down; tell the page what broke
@@ -410,8 +536,14 @@ def banner():
 
 
 def daily_job(job, settings):
-    """What daily.run prints: the day's art, or the word of the day in the chosen language."""
-    render(CARDS["art"]() if job == "art" else word_card(settings["lang"]), True)
+    """What daily.run prints: the day's art, or the word of the day in the chosen language.
+
+    Goes straight to the printer and lets a refusal out on purpose: daily.run retries every minute until
+    it goes out, and leaving a copy in the queue as well would only print it twice."""
+    img = CARDS["art"]() if job == "art" else word_card(settings["lang"])
+    if not PRINTER:
+        raise ValueError("No printer configured: start with --printer <ip>")
+    printer.send(printer.encode(layout.to_rows(img.convert("L"))), PRINTER)
 
 
 def word_card(lang):
@@ -432,14 +564,16 @@ def tunnel(name):
 
 def start(port=PORT, printer_ip=None, tunnel_name=None):
     """Serve in a background thread on all interfaces, so phones on the WiFi can reach it. With a printer,
-    also runs the daily prints (art, word of the day), switched on and off from the page. With a tunnel name,
-    also the Cloudflare tunnel that makes it reachable from home despite the router's AP isolation."""
+    also runs the daily prints (art, word of the day), switched on and off from the page, and a worker that
+    works through anything left in the queue. With a tunnel name, also the Cloudflare tunnel that makes it
+    reachable from home despite the router's AP isolation."""
     global PRINTER, URL
     PRINTER, URL = printer_ip, PUBLIC_URL or f"http://{lan_ip()}:{port}"
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if printer_ip:
         threading.Thread(target=daily.run, args=(daily_job,), daemon=True).start()
+        threading.Thread(target=printq.drain, args=(PRINTER,), daemon=True).start()
     if tunnel_name:
         tunnel(tunnel_name)
     return server

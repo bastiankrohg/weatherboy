@@ -73,12 +73,30 @@ flowchart LR
     R["Oppskrifter: tag filter,<br/>full or short card, → handleliste"] --> PV
     PV["Preview: the exact dots<br/>brightness + contrast"] -->|"✎"| ED["Editor: text, crop,<br/>rotate, draw"]
     ED --> PV
-    PV -->|"Skriv ut"| P[printer]
+    PV -->|"Skriv ut or Kø"| Q["Utskriftskø<br/>reorder, hold, edit, drop"]
+    Q --> P[printer]
 ```
 
 Every receipt is an image, and the ✎ opens it in one editor: fix the text of answers, recipes and lists, crop, rotate between portrait and landscape, and draw (Apple Pencil pressure works on an iPad). Brightness and contrast apply to every print; on text they make strokes thinner or bolder. "Ønsk deg en kvittering" asks Claude to add a new preset button: it only saves a prompt, never code. The shared shopping list and the presets live in `data/` (git-ignored).
 
 The dot in the header is green when the printer is ready, yellow when it's on the network but won't print (cover open, out of paper, busy), and red when it can't be reached. "QR-lapp til veggen" prints the page's address as a QR code; reprint it if the machine's IP changes. Nothing prints until you press "Skriv ut", except the **daily prints**: the day's art and a **word of the day** (Korean A2 by default; French, Italian, Spanish, Portuguese, a Chinese character or a Japanese kanji), switched on and off, and timed (12:00 by default), in the "Daglig utskrift" card. If the printer is off or out of paper they're retried every minute until 22:00, and nothing prints twice a day. The word is one small Claude Haiku call a day, cached; Korean, Chinese and Japanese print in fonts that have those scripts (on a Pi: `sudo apt install fonts-noto-cjk`). Photos are rotated upright and Atkinson-dithered to 576 dots; text is thresholded. There's no login, so anyone on the network can print.
+
+### The print queue
+
+Nothing is ever lost to a printer that's off, busy or out of paper. A receipt that can't go out right now is kept in **Utskriftskø** instead, and the page says so: the printer's light carries the count (`klar · 3 i kø`), and "Skriv ut" tells you it's waiting rather than pretending it printed.
+
+The queue is yours while it waits. Each job has a thumbnail, a name, and five buttons: **▲ ▼** to move it one step (it stops at the ends), **⏸** to hold it back — held jobs are skipped by the printer but never dropped — **✎** to open that job's stored picture in the same editor and write the changes back, and **×** to drop it. "Skriv ut alt" prints everything not held, in order, stopping at the first refusal; "Tøm" empties it. "Kø" next to "Skriv ut" is the deliberate version: skip the printer and print next.
+
+While the server runs it empties itself as soon as the printer takes a job again, every 10 seconds, so nothing needs anyone to touch the page — and receipts asked for at the handset land in the same queue.
+
+Each job is one PNG in `data/printq/`, and `data/printq.json` is the order, so the queue survives a restart. `uv run printq.py` lists what's waiting:
+
+```bash
+uv run printq.py                 # what's waiting
+uv run printq.py 192.168.0.217   # print everything unheld now, then list what didn't go
+```
+
+The daily prints are deliberately *not* queued: `daily.py` already retries them every minute until they go out, and a copy in the queue would only print twice.
 
 **Phones can't connect?** On Windows the firewall blocks it. Allowing "python.exe" doesn't last, because uv's Python lives in versioned folders. Allow the port instead, once, in an administrator PowerShell:
 
@@ -123,9 +141,45 @@ flowchart TD
 
 Get it with `git clone git@github.com:bastiankrohg/recipes.git recipes`, or clone anywhere and point `WEATHERBOY_RECIPES` at it. Drafts made on the Pi come home with `git push`. Recipes print as a kitchen card with tick boxes on the receipt printer, and on A4 via the collection's own `print.py`.
 
-## ESP32 in the F615 base (optional, `--phone`)
+## The ESP in the F615 base (optional, `--phone`)
 
 The mic only listens while the handset is lifted. Lifting gives a dial tone and hanging up ends a call, even mid-sentence. The phone's own LCD shows a clock, then what it heard and what it's doing.
+
+Two boards do this, and `phone.py` picks whichever is plugged in. The **ESP8266** talks over the USB cable — that's what ours is. The **ESP32** talks over WiFi and is kept for networks that don't keep clients apart.
+
+**Why the cable:** the ESP and the machine running the server are two clients on the same router, and ours keeps clients apart (AP isolation), so the WiFi version never got through. A cable doesn't care what the router does, and works with the internet down.
+
+### ESP8266 over USB serial (what's in ours)
+
+```mermaid
+flowchart LR
+    subgraph Base[F615 base]
+        HS[hook switch] --- G5[GPIO5 (D1) + GND]
+        E((ESP8266<br/>esp8266/main.py))
+        G5 --- E
+    end
+    E -->|"USB cable<br/>'HOOK 0/1' on every change<br/>and every 2 s"| Host["main.py / phone.py<br/>pyserial, no addresses, no pairing"]
+    Host -.->|"optional: 'L' + 2-byte length<br/>+ frame, for an LCD"| E
+```
+
+`boot.py` gives UART0 to the host with `os.dupterm(None, 0)`, so the REPL can't echo the hook messages into the stream. **The consequence: there's no REPL.** Getting one back means holding FLASH (GPIO0) while resetting, which puts the board in the serial bootloader, and re-flashing `main.py` — see the steps below.
+
+```mermaid
+flowchart TD
+    F["Flash MicroPython: uv tool install esptool + mpremote<br/>esptool --chip esp8266 erase_flash<br/>esptool --chip esp8266 write_flash 0 ESP8266_GENERIC.bin"] --> W["mpremote cp esp8266/boot.py :boot.py + cp esp8266/main.py :main.py + reset"]
+    W --> C["uv sync --extra phone<br/>uv run phone.py"]
+    C --> H{"'serial …: off hook' when lifted?"}
+    H -->|inverted| INV[flip OFF_HOOK_LEVEL in esp8266/main.py]
+    H -->|yes| D["works: uv run main.py --phone --phone-port COM5"]
+```
+
+Firmware from [micropython.org/download](https://micropython.org/download/) (`ESP8266_GENERIC.bin`).
+
+The hook switch goes between **GPIO5 (`D1`)** and GND. Not D5, as the Arduino version used: on an ESP8266 D5 is GPIO14, the hardware SPI clock, and it's wanted if the F615 glass ever gets wired up. GPIO0, 2 and 15 are strapping pins and GPIO1/3 are the UART this board just gave away, so GPIO5 is the only comfortable one. It also leaves 2, 4, 13, 14, 15 and 16 free for an LCD — SPI is fixed to 12/13/14, so a display still fits alongside this.
+
+There's no WiFi on the ESP8266 at all, and no LCD wired up yet: incoming frames are read and dropped, but the framing is settled (`b"L" + uint16 little-endian length + frame`, the same envelope `printer.encode` uses) so the host side never has to change when the glass does.
+
+### ESP32 over WiFi
 
 ```mermaid
 flowchart LR
@@ -150,7 +204,7 @@ flowchart TD
     H -->|yes| L[LCD bring-up]
 ```
 
-Firmware from [micropython.org/download/ESP32_GENERIC](https://micropython.org/download/ESP32_GENERIC/). C3/S3 boards flash at offset `0` and need different pins.
+Firmware from [micropython.org/download/ESP32_GENERIC](https://micropython.org/download/ESP32_GENERIC/). C3/S3 boards flash at offset `0` and need different pins. If nothing looks like an ESP on the cable, `phone.py` falls back to this UDP link on its own.
 
 ### LCD bring-up
 
@@ -195,7 +249,7 @@ Any speech-to-text pipeline (a phone app, another machine with the handset) can 
 curl -X POST https://print.bastiankrohg.com/api/voice -d '{"text": "hvordan blir været i kveld", "call": false}'
 ```
 
-The reply says what happened (`kind`: card, answer, call, hangup, print, ignored), with `say` for anything to speak back and `printed`. Inside a call (`"call": true`) answers are short and spoken instead of printed. The same home-only rule applies.
+The reply says what happened (`kind`: card, answer, call, hangup, print, ignored), with `say` for anything to speak back, `printed` for what went on paper, and `queued` for a receipt the printer wouldn't take. Inside a call (`"call": true`) answers are short and spoken instead of printed. The same home-only rule applies.
 
 ## Running on the MacBook Pro (2012, macOS 10.15)
 
@@ -232,7 +286,7 @@ flowchart TD
     Start{Platform} --> Win["Windows / Mac"]
     Start --> Pi["Raspberry Pi 4/5, 64-bit Pi OS<br/>sudo apt install libportaudio2"]
     Win & Pi --> UV["install uv: docs.astral.sh/uv"]
-    UV --> Req["uv sync: the server<br/>uv sync --extra voice: + the handset's speech<br/>(not on Intel Macs before macOS 11)"]
+    UV --> Req["uv sync: the server<br/>uv sync --extra voice: + the handset's speech<br/>(not on Intel Macs before macOS 11)<br/>uv sync --extra phone: + the ESP8266 on USB"]
     Req --> Key[".env next to agent.py (git-ignored):<br/>ANTHROPIC_API_KEY=sk-ant-...<br/>optional: WEATHERBOY_PLACE, _LATLON, _STOPS, _UA, _RECIPES, _MODEL"]
     Key --> Check["uv run test_printer.py (with the voice extra)"]
 ```
@@ -247,7 +301,7 @@ flowchart TD
     B --> C["uv run speak.py hei<br/>then tune --volume for the earpiece"]
     C --> P["uv run printer.py PRINTER_IP<br/>smoke-test page"]
     P --> D["uv run main.py --mic USB --speaker USB --printer PRINTER_IP"]
-    D --> T["uv run test_printer.py<br/>uv run --with playwright test_web_ui.py (clicks through the page in Edge)"]
+    D --> T["uv run test_printer.py<br/>uv run --extra ui test_web_ui.py (clicks through the page in Edge)"]
 ```
 
 | Flag | Default | Notes |
@@ -259,5 +313,6 @@ flowchart TD
 | `--volume` | `0.5` | Earpiece gain |
 | `--threshold` | `0.02` | RMS level that counts as speech |
 | `--mic` / `--speaker` | system default | Device index or part of its name |
-| `--phone` | off | Use the ESP32 hook switch and LCD in the F615 base |
+| `--phone` | off | Use the ESP hook switch (and LCD, once wired) in the F615 base |
+| `--phone-port` | first port that looks like an ESP | Serial port of the ESP8266, e.g. `COM5`. Only with `--phone` |
 | `--web` | `8615` | Web page port, `0` turns it off |

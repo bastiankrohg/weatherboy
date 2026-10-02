@@ -13,6 +13,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The ESP8266 phone base over the USB cable (`uv sync --extra phone`). Only needed if you plug the handset base
+# into this machine; without it phone.py falls back to the UDP link the ESP32 used.
+phone = [
+    "pyserial>=3.5",
+]
 # The handset (main.py): speech in and out. `uv sync --extra voice`. onnxruntime (Piper, Whisper's VAD) has no
 # Intel-Mac builds and PyAV needs macOS 11+, so an old Mac runs the server and leaves speech to another machine.
 voice = [
@@ -20,4 +25,9 @@ voice = [
     "piper-tts>=1.8.0",
     "sounddevice>=0.5.6",
     "numpy",
+]
+# The browser tests (test_web_ui.py): drives the page in a real Chromium. `uv run playwright install chromium`
+# once, then `uv run test_web_ui.py`.
+ui = [
+    "playwright>=1.50",
 ]
