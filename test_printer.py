@@ -709,8 +709,12 @@ class FakeBoard(phone.SerialLink):
                 continue
             line, _, rest = bytes(self.out).partition(b"\n")
             self.out = bytearray(rest)
-            self.inbox.put(self.answer(line.decode()))
+            if (reply := self.answer(line.decode())) is not None:  # SCREEN gets no answer
+                self.inbox.put(reply)
     def answer(self, cmd):
+        if cmd.startswith("SCREEN "):
+            self.screen = cmd[7:]
+            return None
         if cmd == "GET":
             return b"CFG " + json.dumps(self.cfg).encode()
         if cmd.startswith("SET "):
@@ -758,6 +762,16 @@ try:
     raise AssertionError("an old firmware answered")
 except TimeoutError as e:
     assert "fastvaren" in str(e)
+phone._shared.screen("think")  # the board's own "Tenker" screen, until done
+assert board.screen == "think"
+phone._shared.screen("done")
+assert board.screen == "done" and phone._shared.config()["host"] == "192.168.0.42"  # no stray answer in between
+try:
+    phone._shared.screen("dance")
+    raise AssertionError("sent an unknown screen state")
+except ValueError:
+    pass
+phone.Phone(phone.UdpLink.__new__(phone.UdpLink)).screen("think")  # an ESP32 on WiFi: nothing to draw, no error
 phone._shared = None
 del os.environ["WEATHERBOY_ADMIN"]
 srv3.shutdown()

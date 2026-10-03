@@ -520,7 +520,7 @@ password"), but I could not find the URL or port documented. Try
 look if that fails.
 ### First prints (2026-09-30)
 
-- **Address:** 192.168.0.108, port 9100, MAC `00:11:62:0f:ed:3f`.
+- **Address:** 192.168.0.108 (reserved on the router since 2026-10-03), port 9100, MAC `00:11:62:0f:ed:3f`.
 - **Port 9100 isn't silent after all.** The printer sends an 11-byte Star automatic status block
   (`23 86 00 …` when ready) the moment a connection opens. That makes a pre-print check possible:
   `python printer.py <ip> status`.

@@ -153,7 +153,7 @@ Two boards do this, and `phone.py` picks whichever is plugged in. The **ESP8266*
 
 Ours now runs the Arduino sketch in [esp8266-phone-hook](https://github.com/bastiankrohg/esp8266-phone-hook) (hook switch on D5). It sends the same `HOOK 0/1` lines over USB as the MicroPython firmware below, and also reports to a server over WiFi. That server address, the port and the WiFi network can be changed on the page, in the **Telefonen** card (admin only). The server talks to the board over the cable, so no reflashing is needed. This needs `uv sync --extra phone` on the machine the board is plugged into.
 
-**Screen (planned):** a 0.96" 128×64 OLED (JMD0.96C, SSD1306 on I²C) goes on the same board: VCC to 3V3, GND to GND, SCL to D1, SDA to D2. Check the module's pin labels first, as some batches swap VCC and GND. `phone.frame()` already packs frames in the SSD1306's own memory order, so the firmware can copy them straight to the screen. Until the sketch draws them, frames are read and skipped. The wiring and quirks are in the [esp8266-phone-hook README](https://github.com/bastiankrohg/esp8266-phone-hook#screen-planned).
+**Screen:** a 0.96" 128×64 OLED (JMD0.96C, SSD1306 on I²C) on the same board: VCC to 3V3, GND to GND, SCL to D1, SDA to D2. Check the module's pin labels first, as some batches swap VCC and GND. The board draws it itself: dark while the handset is down, a phone with counting dots while it's lifted, and "Tenker" from when the voice loop has heard a question until the answer is in (`phone.screen("think")` / `"done"`), even if the handset goes down in between. More in the [esp8266-phone-hook README](https://github.com/bastiankrohg/esp8266-phone-hook#screen).
 
 ```mermaid
 flowchart LR
@@ -254,6 +254,16 @@ curl -X POST https://print.bastiankrohg.com/api/voice -d '{"text": "hvordan blir
 ```
 
 The reply says what happened (`kind`: card, answer, call, hangup, print, ignored), with `say` for anything to speak back, `printed` for what went on paper, and `queued` for a receipt the printer wouldn't take. Inside a call (`"call": true`) answers are short and spoken instead of printed. The same home-only rule applies.
+
+## Addresses at home
+
+All reserved on the router (http://192.168.0.1), so they stay put:
+
+| Device | Address |
+|---|---|
+| Old MacBook Pro: the server, web page on `:8615`, the phone base on its USB | 192.168.0.220 |
+| Receipt printer (Star TSP143IIILAN), port 9100 | 192.168.0.108 |
+| Phone base (ESP8266) on WiFi; it reports hook changes to the server on port 5000 | 192.168.0.114 |
 
 ## Running on the MacBook Pro (2012, macOS 10.15)
 

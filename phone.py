@@ -188,7 +188,15 @@ class Phone:
         return self.up and time.time() - self.seen < STALE
 
     def show(self, img):
+        """A whole picture on the screen, until the hook or the screen state next changes."""
         self.link.send_frame(frame(img))
+
+    def screen(self, state):
+        """The board's own screens: "think" while a request is being handled, "done" when it's finished."""
+        if state not in ("think", "done"):
+            raise ValueError(state)
+        if isinstance(self.link, SerialLink):  # the ESP32 on WiFi draws nothing of its own
+            self.link.send_line(f"SCREEN {state}")
 
 
 if __name__ == "__main__":
