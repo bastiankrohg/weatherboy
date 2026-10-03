@@ -27,6 +27,7 @@ import time
 PORT = 7615
 W, H = 128, 64   # the F615 glass is probably 128x64; must match the firmware
 STALE = 10       # seconds without a heartbeat before we assume the ESP is gone (and treat it as hung up)
+BOOT = 2.0       # seconds an ESP8266 needs after the port opens (which resets it) before it hears commands
 
 # The USB-serial bridges an ESP board ships with, so a Bluetooth or Arduino port on the same
 # machine isn't mistaken for the phone.
@@ -86,6 +87,7 @@ class SerialLink:
         self.ser.rts = False
         self.where = f"serial {port}"
         self._write = threading.Lock()  # the voice loop's LCD frames and the web page's commands share the cable
+        self.booted = time.monotonic() + BOOT  # opening the port resets the board: commands wait until it's up
 
     def lines(self):
         while True:
@@ -103,6 +105,7 @@ class SerialLink:
 
     def send_line(self, text):
         """A command for the firmware (GET, SET key=value, TEST, RESTART), never mid-frame."""
+        time.sleep(max(0.0, getattr(self, "booted", 0) - time.monotonic()))
         with self._write:
             self.ser.write(text.encode() + b"\n")
 
