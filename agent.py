@@ -201,7 +201,7 @@ MODELS = {
     "claude-sonnet-5-5": {"name": "Sonnet 5.5", "price": (2, 10)},
     "claude-opus-5-5": {"name": "Opus 5.5 (smartest, dyrest)", "price": (4, 20)},
 }
-model = os.environ.get("WEATHERBOY_MODEL", "claude-haiku-4-5")
+model = os.environ.get("WEATHERBOY_MODEL", "local")  # free unless someone picks Claude (page or .env)
 spent = 0.0  # estimated $ since start; the real balance is on console.anthropic.com
 
 
@@ -235,40 +235,52 @@ def set_model(m):
 
 
 client = Anthropic()
-history, last_ask = [], 0.0
+history, last_ask, last_model = [], 0.0, None
 _lock = threading.Lock()  # one conversation, shared by the phone and the web page
+NO_KEY = "Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py, og start på nytt."
 
 
-def ask(question, voice=False):
-    """-> (answer text, estimated $ for it)."""
-    if model != "local" and not (client.api_key or client.auth_token):
-        raise RuntimeError("Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py, og start på nytt.")
+def client_for(api_key=None):
+    """The flat's own client, or one on a visitor's key. Theirs is never kept: it lives for one question."""
+    return Anthropic(api_key=api_key) if api_key else client
+
+
+def ask(question, voice=False, use=None, api_key=None):
+    """-> (answer text, estimated $ for it). use: a model for this question only, instead of the server's;
+    api_key: the asker's own, so a paid model bills their account and not the flat's."""
+    m = use or model
+    if m not in MODELS:
+        raise ValueError(f"Unknown model {m!r}")
+    via = client_for(api_key)
+    if m != "local" and not (via.api_key or via.auth_token):
+        raise RuntimeError(NO_KEY)
     with _lock:
-        return _ask(question, voice)
+        return _ask(question, voice, m, via)
 
 
-def _ask(question, voice):
-    global history, last_ask
-    if time.time() - last_ask > 600:  # ponytail: follow-ups work for 10 min, then a fresh conversation
-        history = []
-    last_ask = time.time()
+def _ask(question, voice, m, via):
+    global history, last_ask, last_model
+    if time.time() - last_ask > 600 or m != last_model:  # ponytail: follow-ups work for 10 min; a new model
+        history = []                                     # starts fresh, as one's tool blocks confuse another
+    last_ask, last_model = time.time(), m
     cookbook.last = None
     history.append({"role": "user", "content": f"[{datetime.now():%A %d.%m.%Y %H:%M}] {question}"})
-    if model == "local":  # free: Ollama on the work desktop or this machine, with our own tools (no web)
+    if m == "local":  # free: Ollama on the work desktop or this machine, with our own tools (no web)
         return local.chat(VOICE if voice else PAPER, history, TOOLS + LOCAL_WEB), 0.0
-    return _run(VOICE if voice else PAPER, history)
+    return _run(VOICE if voice else PAPER, history, use=m, via=via)
 
 
-def _run(system, messages, extra_tools=(), use=None, effort="low"):
+def _run(system, messages, extra_tools=(), use=None, effort="low", via=None):
     """The tool loop. Appends the conversation to `messages`; -> (final text, estimated $).
-    use: a model other than the one picked on the page (preset design uses a stronger one)."""
+    use: a model other than the server's (the asker's pick; preset design uses a stronger one).
+    via: the client to bill (a visitor's key); only what the flat's own key spends counts in `spent`."""
     global spent
-    m = use or model
+    m, via = use or model, via or client
     p = params(m, effort)
     p["tools"] = p["tools"] + list(extra_tools)
     dollars = 0.0
     for _ in range(5):  # the runner doesn't resume pause_turn (long server-tool turns); restart it
-        runner = client.beta.messages.tool_runner(
+        runner = via.beta.messages.tool_runner(
             model=m, system=system, messages=list(messages),
             cache_control={"type": "ephemeral"},  # tool-loop turns re-send everything; cached reads cost 10%
             **p)
@@ -280,7 +292,8 @@ def _run(system, messages, extra_tools=(), use=None, effort="low"):
                 messages.append(result)
         if msg is None or msg.stop_reason != "pause_turn":
             break
-    spent += dollars
+    if via is client:
+        spent += dollars
     if msg is None or msg.stop_reason == "refusal":
         return "Sorry, I can't help with that one.", dollars
     return "".join(b.text for b in msg.content if b.type == "text").strip(), dollars
@@ -299,14 +312,16 @@ Norwegian, why."""
 PRESET_MODEL = "claude-sonnet-5-5"  # a preset is used many times, so it's worth a better designer than chat
 
 
-def design_preset(request):
-    """A wish from the page -> maybe a new preset button. -> (reply text, the preset or None, estimated $)."""
-    if not (client.api_key or client.auth_token):
-        raise RuntimeError("Mangler API-nøkkel: legg ANTHROPIC_API_KEY=... i .env ved siden av agent.py, og start på nytt.")
+def design_preset(request, api_key=None):
+    """A wish from the page -> maybe a new preset button. -> (reply text, the preset or None, estimated $).
+    api_key: the asker's own (see ask)."""
+    via = client_for(api_key)
+    if not (via.api_key or via.auth_token):
+        raise RuntimeError(NO_KEY)
     with _lock:
         presets.last = None
         reply, dollars = _run(PRESET, [{"role": "user", "content": request}], [beta_tool(presets.create_preset)],
-                              use=PRESET_MODEL, effort="medium")
+                              use=PRESET_MODEL, effort="medium", via=via)
         return reply, presets.last, dollars
 
 

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weatherboy · VHF</title>
+<style>
+  /* A phosphor screen in a radio: the sphere is drawn like an oscilloscope trace, the mode is a station on
+     the dial. Colour is the phosphor of the mode, set on <body> by the script. */
+  :root { --ph: 255 157 46; --bg: #0c0a08; --panel: #15120e; --line: #2c261f; --muted: #7d7263; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: rgb(var(--ph)); overflow: hidden; display: grid; grid-template-rows: auto 1fr auto;
+         font: 14px/1.4 "SF Mono", Menlo, "DejaVu Sans Mono", Consolas, monospace; letter-spacing: .04em; }
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9;
+                background: repeating-linear-gradient(rgb(0 0 0 / .28) 0 1px, transparent 1px 3px),
+                            radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / .65) 100%);
+                animation: flicker 4s steps(40) infinite; }
+  @keyframes flicker { 0%, 100% { opacity: 1; } 47% { opacity: .93; } 48% { opacity: 1; } 81% { opacity: .96; } }
+  @media (prefers-reduced-motion: reduce) { body::after { animation: none; } }
+  .glow { text-shadow: 0 0 6px rgb(var(--ph) / .7), 0 0 18px rgb(var(--ph) / .35); }
+  header { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 20px 0; }
+  .brand { font-weight: 700; letter-spacing: .32em; }
+  .brand small { color: var(--muted); font-weight: 400; letter-spacing: .18em; margin-left: 10px; }
+  .meta { color: var(--muted); display: flex; gap: 16px; }
+  .rec::before { content: "●"; margin-right: 6px; color: rgb(var(--ph)); }
+  .rec.off::before { content: "○"; color: var(--muted); }
+  #stage { position: relative; min-height: 0; }
+  #orb { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .mode { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; }
+  .mode b { display: block; font-size: 30px; letter-spacing: .42em; padding-left: .42em; }
+  .mode span { color: var(--muted); font-size: 13px; }
+  .panel { background: linear-gradient(#1a1611, var(--panel)); border-top: 1px solid var(--line);
+           padding: 14px 20px 18px; display: grid; gap: 12px; }
+  .dial { position: relative; height: 54px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+          background: linear-gradient(rgb(var(--ph) / .06), transparent 70%), #0e0c09; }
+  .ticks { position: absolute; left: 2%; right: 2%; bottom: 0; height: 14px;
+           background: repeating-linear-gradient(90deg, var(--muted) 0 1px, transparent 1px calc(100% / 80)); opacity: .55; }
+  .ticks.big { height: 22px; background: repeating-linear-gradient(90deg, var(--muted) 0 1px, transparent 1px calc(100% / 10));
+               opacity: .9; }
+  .num, .stn { position: absolute; transform: translateX(-50%); font-size: 11px; }
+  .num { bottom: 24px; color: var(--muted); }
+  .stn { top: 5px; font-size: 10px; letter-spacing: .2em; color: var(--muted); }
+  .stn.on { color: rgb(var(--ph)); }
+  .needle { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff4a2a;
+            box-shadow: 0 0 8px #ff4a2a, 0 0 2px #fff; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
+  #scope { width: 100%; height: 56px; display: block; border: 1px solid var(--line); border-radius: 4px; background: #0e0c09; }
+  .vu { display: grid; grid-template-columns: repeat(24, 7px); gap: 3px; height: 22px; }
+  .vu i { background: #241f19; border-radius: 1px; }
+  .vu i.on { background: rgb(var(--ph)); box-shadow: 0 0 6px rgb(var(--ph) / .8); }
+  .vu i.hot.on { background: #ffcc33; box-shadow: 0 0 6px #ffcc33; }
+  .vu i.red.on { background: #ff4a2a; box-shadow: 0 0 6px #ff4a2a; }
+  .read { color: var(--muted); font-size: 12px; text-align: right; margin-top: 4px; }
+  .read b { color: rgb(var(--ph)); font-weight: 400; }
+  .text { min-height: 3.2em; max-height: 9.5em; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+  .heard { color: var(--muted); }
+  .heard:not(:empty)::before { content: "› "; }
+  .said:not(:empty)::after { content: "▌"; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand glow">WEATHERBOY<small>VHF · F615</small></div>
+  <div class="meta"><span id="clock">--:--:--</span><span class="rec off" id="rec">INGEN SIGNAL</span></div>
+</header>
+<div id="stage">
+  <canvas id="orb"></canvas>
+  <div class="mode"><b class="glow" id="mode">LAGT PÅ</b><span id="label"></span></div>
+</div>
+<div class="panel">
+  <div class="dial" id="dial">
+    <div class="ticks"></div><div class="ticks big"></div>
+    <div class="needle" id="needle"></div>
+  </div>
+  <div class="row">
+    <canvas id="scope"></canvas>
+    <div><div class="vu" id="vu"></div><div class="read"><b id="freq">88.6</b> MHz · <b id="db">-∞</b> dB</div></div>
+  </div>
+  <div class="text glow"><div class="heard" id="heard"></div><div class="said" id="said"></div></div>
+</div>
+<script>
+// Each mode is a station on the dial and a phosphor colour. "off" is the stream gone: static, no station.
+const MODES = {
+  idle:   {name: "LAGT PÅ", mhz: 88.6,  rgb: [255, 157, 46],  spin: .05, amp: .015, rings: 12},
+  listen: {name: "LYTTER",  mhz: 93.4,  rgb: [125, 255, 176], spin: .15, amp: .03,  rings: 18},
+  think:  {name: "TENKER",  mhz: 99.1,  rgb: [111, 211, 255], spin: .9,  amp: .03,  rings: 18},
+  speak:  {name: "SNAKKER", mhz: 104.7, rgb: [255, 179, 71],  spin: .25, amp: .03,  rings: 18},
+  error:  {name: "FEIL",    mhz: 107.4, rgb: [255, 84, 64],   spin: .4,  amp: .06,  rings: 14},
+};
+const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = id => document.getElementById(id);
+const pct = mhz => 2 + (mhz - 88) / 20 * 96;  // the scale runs 88-108 between 2% and 98% of the dial
+
+for (let f = 88; f <= 108; f += 4) $("dial").insertAdjacentHTML("beforeend", `<span class="num" style="left:${pct(f)}%">${f}</span>`);
+for (const [k, m] of Object.entries(MODES))
+  $("dial").insertAdjacentHTML("beforeend", `<span class="stn" data-mode="${k}" style="left:${pct(m.mhz)}%">${m.name}</span>`);
+$("vu").innerHTML = Array.from({length: 24}, (_, i) => `<i class="${i >= 21 ? "red" : i >= 16 ? "hot" : ""}"></i>`).join("");
+const leds = [...$("vu").children];
+
+let S = {mode: "idle", level: 0, label: "", heard: "", said: ""}, lastMsg = -1e9;
+const es = new EventSource("/api/orb");
+es.onmessage = e => { S = JSON.parse(e.data); lastMsg = performance.now(); };
+
+// static: a few frames of noise, drawn stretched over everything at a strength that depends on the mode
+const noise = Array.from({length: 4}, () => {
+  const c = document.createElement("canvas"); c.width = c.height = 160;
+  const g = c.getContext("2d"), img = g.createImageData(160, 160);
+  for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data.set([v, v, v, 255], i); }
+  g.putImageData(img, 0, 0); return c;
+});
+
+const cv = $("orb"), ctx = cv.getContext("2d"), sc = $("scope"), sx = sc.getContext("2d");
+let W, H, dpr;
+function fit() {
+  dpr = devicePixelRatio || 1;
+  W = cv.width = cv.clientWidth * dpr; H = cv.height = cv.clientHeight * dpr;
+  sc.width = sc.clientWidth * dpr; sc.height = sc.clientHeight * dpr;
+}
+addEventListener("resize", fit); fit();
+
+let lv = 0, rot = 0, mhz = 88.6, col = [255, 157, 46], waves = [], lastWave = 0, prevLv = 0, t0 = performance.now(), prev = t0;
+const hist = new Array(160).fill(0);
+let shown = "", said = "";
+
+function project(x, y, z, tilt) {
+  return [x, y * Math.cos(tilt) - z * Math.sin(tilt), z * Math.cos(tilt) + y * Math.sin(tilt)];
+}
+
+// A polyline in two passes, back half faint and front half bright, so the sphere reads as solid
+function strokeDepth(pts, rgb, a) {
+  for (const front of [false, true]) {
+    ctx.beginPath();
+    for (let i = 1; i < pts.length; i++) {
+      if ((pts[i][2] + pts[i - 1][2] > 0) !== front) continue;
+      ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]);
+    }
+    ctx.strokeStyle = `rgb(${rgb} / ${front ? a : a * .2})`; ctx.stroke();
+  }
+}
+
+function frame(now) {
+  const dt = Math.min(.05, (now - prev) / 1000), t = (now - t0) / 1000; prev = now;
+  const online = now - lastMsg < 1500;
+  const m = online ? (MODES[S.mode] || MODES.idle) : MODES.idle;
+  const target = online ? S.level : 0;
+  lv += (target - lv) * (target > lv ? .5 : .12);
+  col = col.map((c, i) => c + (m.rgb[i] - c) * .06);
+  const rgb = col.map(Math.round).join(" ");
+  document.body.style.setProperty("--ph", rgb);
+
+  // the orb
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "rgb(12 10 8 / .55)"; ctx.fillRect(0, 0, W, H);  // not a full clear: traces leave a phosphor tail
+  ctx.globalCompositeOperation = "lighter";
+  const R = Math.min(W, H) * .32, cx = W / 2 + (S.mode === "error" && online ? (Math.random() - .5) * 10 * dpr : 0),
+        cy = H / 2 - 18 * dpr, amp = m.amp + lv * .28, tilt = .28 + .05 * Math.sin(t * .3);
+  rot += m.spin * (STILL ? .2 : 1) * dt;
+
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.25);
+  core.addColorStop(0, `rgb(${rgb} / ${(online ? .1 : .03) + lv * .25})`); core.addColorStop(1, `rgb(${rgb} / 0)`);
+  ctx.fillStyle = core; ctx.fillRect(cx - R * 1.3, cy - R * 1.3, R * 2.6, R * 2.6);
+
+  ctx.lineWidth = 1.3 * dpr; ctx.shadowBlur = (6 + lv * 18) * dpr; ctx.shadowColor = `rgb(${rgb} / .9)`;
+  const bright = online ? .55 + lv * .45 : .25;
+  for (let i = 1; i < m.rings; i++) {
+    const phi = -Math.PI / 2 + Math.PI * i / m.rings, pts = [];
+    for (let j = 0; j <= 72; j++) {
+      const th = 2 * Math.PI * j / 72;
+      const w = Math.sin(3 * th + t * 1.7 + phi * 3) * .55 + Math.sin(5 * th - t * 1.1 + phi * 5) * .3
+              + Math.sin(2 * th + t * .6 - phi * 2) * .15;
+      const rr = R * Math.cos(phi) * (1 + amp * w);
+      pts.push(project(rr * Math.cos(th + rot), R * Math.sin(phi) * (1 + amp * .5 * w), rr * Math.sin(th + rot), tilt)
+               .map((v, k) => k === 0 ? cx + v : k === 1 ? cy + v : v));
+    }
+    strokeDepth(pts, rgb, bright);
+  }
+  if (S.mode === "think" && online) {  // meridians turning, and a radar sweep around the rim
+    for (let k = 0; k < 6; k++) {
+      const a = rot * 1.5 + k * Math.PI / 6, pts = [];
+      for (let j = 0; j <= 40; j++) {
+        const phi = -Math.PI / 2 + Math.PI * j / 40;
+        pts.push(project(R * Math.cos(phi) * Math.cos(a), R * Math.sin(phi), R * Math.cos(phi) * Math.sin(a), tilt)
+                 .map((v, n) => n === 0 ? cx + v : n === 1 ? cy + v : v));
+      }
+      strokeDepth(pts, rgb, .5);
+    }
+    const sweep = t * 2.4;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 1.18, sweep, sweep + .9);
+    ctx.strokeStyle = `rgb(${rgb} / .8)`; ctx.lineWidth = 2 * dpr; ctx.stroke();
+  }
+  if (S.mode === "speak" && online && lv - prevLv > .06 && t - lastWave > .14) { waves.push({r: R * 1.05, a: .6 * lv + .2}); lastWave = t; }
+  if (S.mode === "listen" && online) {  // the pickup ring: how loud the room is
+    ctx.setLineDash([2 * dpr, 6 * dpr]); ctx.beginPath(); ctx.arc(cx, cy, R * (1.14 + lv * .22), 0, 2 * Math.PI);
+    ctx.strokeStyle = `rgb(${rgb} / ${.25 + lv * .6})`; ctx.lineWidth = 1.5 * dpr; ctx.stroke(); ctx.setLineDash([]);
+  }
+  prevLv = lv;
+  waves = waves.filter(w => (w.r += 160 * dpr * dt, w.a -= .7 * dt) > 0);  // radio waves going out
+  for (const w of waves) {
+    ctx.beginPath(); ctx.ellipse(cx, cy, w.r, w.r * Math.cos(tilt) * 1.05, 0, 0, 2 * Math.PI);
+    ctx.strokeStyle = `rgb(${rgb} / ${w.a})`; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  // static and the hum bar rolling down the screen
+  ctx.globalCompositeOperation = "source-over";
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = !online ? .5 : S.mode === "think" ? .07 : S.mode === "error" ? .14 : .035;
+  ctx.drawImage(noise[Math.floor(Math.random() * 4)], Math.random() * -40, Math.random() * -40, W / 2 + 40, H / 2 + 40);
+  ctx.drawImage(noise[Math.floor(Math.random() * 4)], W / 2 - Math.random() * 40, Math.random() * -40, W / 2 + 40, H / 2 + 40);
+  ctx.drawImage(noise[Math.floor(Math.random() * 4)], Math.random() * -40, H / 2 - Math.random() * 40, W / 2 + 40, H / 2 + 40);
+  ctx.drawImage(noise[Math.floor(Math.random() * 4)], W / 2 - Math.random() * 40, H / 2 - Math.random() * 40, W / 2 + 40, H / 2 + 40);
+  ctx.globalAlpha = 1;
+  const bar = (t * .08 % 1.4 - .2) * H, hum = ctx.createLinearGradient(0, bar - 60 * dpr, 0, bar + 60 * dpr);
+  hum.addColorStop(0, "rgb(255 255 255 / 0)"); hum.addColorStop(.5, "rgb(255 255 255 / .025)"); hum.addColorStop(1, "rgb(255 255 255 / 0)");
+  ctx.fillStyle = hum; ctx.fillRect(0, bar - 60 * dpr, W, 120 * dpr);
+
+  // the dial: the needle swings to the mode's station; thinking, it hunts around it like someone tuning
+  const want = !online ? 88 + 20 * (.5 + .5 * Math.sin(t * .7)) : m.mhz + (S.mode === "think" ? Math.sin(t * 1.3) * .9 + Math.sin(t * 3.1) * .3 : 0);
+  mhz += (want - mhz) * .07;
+  $("needle").style.left = pct(mhz) + "%";
+  $("freq").textContent = mhz.toFixed(1);
+  document.querySelectorAll(".stn").forEach(s => s.classList.toggle("on", online && s.dataset.mode === S.mode));
+
+  // scope and VU meter
+  hist.push(lv); hist.shift();
+  const sw = sc.width, sh = sc.height;
+  sx.fillStyle = "rgb(14 12 9 / .6)"; sx.fillRect(0, 0, sw, sh);
+  sx.strokeStyle = "rgb(125 114 99 / .18)"; sx.lineWidth = 1;
+  sx.beginPath(); for (let x = 0; x < sw; x += sw / 10) { sx.moveTo(x, 0); sx.lineTo(x, sh); } sx.moveTo(0, sh / 2); sx.lineTo(sw, sh / 2); sx.stroke();
+  sx.beginPath();
+  for (let x = 0; x <= sw; x += 2) {
+    const h = hist[Math.floor(x / sw * (hist.length - 1))];
+    const y = sh / 2 + (Math.sin(x * .09 / dpr + t * 14) * h * .42 + Math.sin(x * .023 / dpr - t * 3) * h * .12) * sh
+              + (online ? 0 : (Math.random() - .5) * sh * .5);
+    x ? sx.lineTo(x, y) : sx.moveTo(x, y);
+  }
+  sx.strokeStyle = `rgb(${rgb})`; sx.lineWidth = 1.5 * dpr; sx.shadowBlur = 6 * dpr; sx.shadowColor = `rgb(${rgb})`; sx.stroke(); sx.shadowBlur = 0;
+  const lit = Math.round(lv * leds.length);
+  leds.forEach((l, i) => l.classList.toggle("on", i < lit));
+  $("db").textContent = lv > .01 ? Math.round(lv * 40 - 50) : "-∞";
+
+  // words: what was heard, and the answer typed out like a teleprinter
+  $("mode").textContent = online ? m.name : "INGEN SIGNAL";
+  $("label").textContent = online ? S.label : "venter på main.py";
+  $("rec").textContent = online ? "PÅ LUFTA" : "INGEN SIGNAL"; $("rec").classList.toggle("off", !online);
+  $("heard").textContent = S.heard;
+  if (S.said !== said) { said = S.said; shown = ""; }
+  if (shown.length < said.length) shown = said.slice(0, shown.length + Math.max(1, Math.round(dt * 60)));
+  $("said").textContent = shown;
+  $("clock").textContent = new Date().toLocaleTimeString("no-NO");
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

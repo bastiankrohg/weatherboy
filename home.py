@@ -15,6 +15,7 @@ from pathlib import Path
 
 FILE = Path(__file__).with_name("data") / "hjemme.json"
 REFRESH = 300  # seconds
+RETRY = 30  # seconds, while home isn't known yet: a missed knock shouldn't shut everyone out for REFRESH
 _home = {"v4": None, "v6": None, "at": 0.0}
 _lock = threading.Lock()
 
@@ -53,6 +54,8 @@ def addresses(at_home=lambda: True):
                 saved = json.loads(FILE.read_text(encoding="utf-8"))
                 _home["v4"] = ipaddress.ip_address(saved["v4"])
                 _home["v6"] = saved["v6"] and ipaddress.ip_network(saved["v6"])
+            if _home["v4"] is None:
+                _home["at"] -= REFRESH - RETRY
         return _home["v4"], _home["v6"]
 
 

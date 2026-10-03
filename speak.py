@@ -1,5 +1,6 @@
 """Handset earpiece: Piper TTS (offline, Norwegian + English) and Norwegian phone tones."""
 import re
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -45,19 +46,25 @@ def synth(text):
     return np.concatenate([c.audio_float_array for c in voice(lang_of(text)).synthesize(text)])
 
 
-def play(audio, out=None, volume=1.0, abort=None):
+def play(audio, out=None, volume=1.0, abort=None, level=None):
     """volume: calibration knob for the handset earpiece (it's far more sensitive than a headphone).
-    abort: checked every 50 ms; true stops playback (the handset was hung up mid-sentence)."""
+    abort: checked every 50 ms; true stops playback (the handset was hung up mid-sentence).
+    level: called every 50 ms with the RMS of what's playing right then, for a meter (the orb)."""
     sd.play(np.clip(audio * volume, -1, 1).astype(np.float32), RATE, device=device(out))
+    start = time.monotonic()
     while sd.get_stream().active:
         if abort and abort():
             sd.stop()
             return
+        if level:
+            at = int((time.monotonic() - start) * RATE)
+            x = audio[at:at + RATE // 20]
+            level(float(np.sqrt(np.mean(x * x))) if len(x) else 0.0)
         sd.sleep(50)
 
 
-def say(text, out=None, volume=1.0, abort=None):
-    play(synth(text), out, volume, abort)
+def say(text, out=None, volume=1.0, abort=None, level=None):
+    play(synth(text), out, volume, abort, level)
 
 
 if __name__ == "__main__":

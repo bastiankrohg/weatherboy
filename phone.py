@@ -18,11 +18,11 @@ what running without a hook switch does all the time anyway. Add a shared key if
 shows private data.
 """
 import argparse
+import json
+import queue
 import socket
 import threading
 import time
-
-import numpy as np
 
 PORT = 7615
 W, H = 128, 64   # the F615 glass is probably 128x64; must match the firmware
@@ -68,6 +68,9 @@ class UdpLink:
         if self.addr:
             self.sock.sendto(b"LCD" + data, self.addr)
 
+    def send_line(self, text):
+        raise RuntimeError("Innstillinger går bare over USB-kabelen (ESP8266), ikke over WiFi.")
+
 
 class SerialLink:
     """An ESP8266 on a USB cable. Lines are newline-terminated; the LCD frame is length-prefixed,
@@ -82,6 +85,7 @@ class SerialLink:
         self.ser.dtr = False
         self.ser.rts = False
         self.where = f"serial {port}"
+        self._write = threading.Lock()  # the voice loop's LCD frames and the web page's commands share the cable
 
     def lines(self):
         while True:
@@ -92,7 +96,13 @@ class SerialLink:
     def send_frame(self, data):
         """The ESP8266 firmware wants b"L" + a 2-byte little-endian length + the frame - the same
         envelope printer.encode uses for raster rows, so a short LCD frame can follow a long one."""
-        self.ser.write(b"L" + len(data).to_bytes(2, "little") + data)
+        with self._write:
+            self.ser.write(b"L" + len(data).to_bytes(2, "little") + data)
+
+    def send_line(self, text):
+        """A command for the firmware (GET, SET key=value, TEST, RESTART), never mid-frame."""
+        with self._write:
+            self.ser.write(text.encode() + b"\n")
 
 
 def open_link(port=None):
@@ -105,8 +115,27 @@ def open_link(port=None):
     return UdpLink(PORT)
 
 
+_shared, _shared_lock = None, threading.Lock()
+
+
+def shared(port=None, serial_only=False):
+    """The one Phone for this process, opened the first time it's asked for: main.py's voice loop and the web
+    page's settings card use the same cable. serial_only: None rather than falling back to WiFi (the web page
+    only wants a board on the cable); nothing plugged in yet is asked again next time."""
+    global _shared
+    with _shared_lock:
+        if _shared is None:
+            if serial_only and not port and not guess_port():
+                return None
+            _shared = Phone(open_link(port))
+        if serial_only and not isinstance(_shared.link, SerialLink):
+            return None
+        return _shared
+
+
 def frame(img):
     """PIL image W x H -> controller bytes: 8-row pages top to bottom, one byte per column, LSB = top row."""
+    import numpy as np  # here, not at the top: the server uses the board's settings without the voice extra
     assert img.size == (W, H), f"LCD image is {img.size}, want {(W, H)}"
     dark = np.asarray(img.convert("L")) < 128
     return np.packbits(dark.reshape(H // 8, 8, W), axis=1, bitorder="little").tobytes()
@@ -116,12 +145,44 @@ class Phone:
     def __init__(self, link=None):
         self.link = link or open_link()
         self.up, self.seen = False, 0.0
+        self.replies, self._asking = queue.Queue(), threading.Lock()
         threading.Thread(target=self._listen, daemon=True).start()
 
     def _listen(self):
         for line in self.link.lines():
             if line in (b"HOOK 0", b"HOOK 1"):
                 self.up, self.seen = line == b"HOOK 1", time.time()
+            elif line.startswith((b"CFG ", b"OK", b"ERR")):  # answers to ask(); "#" lines are the board's log
+                self.replies.put(line.decode(errors="replace"))
+
+    def ask(self, command, timeout=4.0):
+        """One command to the firmware (esp8266-phone-hook) -> its one-line answer. Raises TimeoutError if the
+        board doesn't answer: an older firmware that has no settings, or the board isn't running."""
+        with self._asking:
+            while not self.replies.empty():  # a late answer to an earlier question isn't this one's
+                self.replies.get_nowait()
+            self.link.send_line(command)
+            try:
+                return self.replies.get(timeout=timeout)
+            except queue.Empty:
+                raise TimeoutError("Brettet svarte ikke. Har det den nye fastvaren (esp8266-phone-hook)?") from None
+
+    def config(self):
+        """The board's settings and state: host, port, ssid, pass ("set"/"unset"), wifi, ip, rssi, hook."""
+        reply = self.ask("GET")
+        if not reply.startswith("CFG "):
+            raise RuntimeError(reply)
+        return json.loads(reply[4:])
+
+    def set(self, **settings):
+        """Save settings in the board's flash (host, port, ssid, pass). Raises ValueError with the board's reason."""
+        for key, value in settings.items():
+            value = str(value)
+            if "\n" in value or "\r" in value:
+                raise ValueError(f"{key} kan ikke inneholde linjeskift")
+            reply = self.ask(f"SET {key}={value}")
+            if not reply.startswith("OK"):
+                raise ValueError(reply.removeprefix("ERR ").strip())
 
     def lifted(self):
         return self.up and time.time() - self.seen < STALE

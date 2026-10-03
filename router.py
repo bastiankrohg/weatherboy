@@ -36,6 +36,22 @@ def command(text, password=()):
     return None
 
 
+def receipt(text, cards, cmd=None):
+    """The part of route() that needs no model: a keyword receipt, or a sentence nlp is sure of.
+    -> (card name, image) or None. The web page's question box asks this first too, so typing "tog fra Røros"
+    gets the board straight away, free. cmd: command(text) if the caller has it already."""
+    try:
+        hit = nlp.match(text)
+        if isinstance(hit, dict) and hit["intent"] in cards:
+            return hit["intent"], cards[hit["intent"]](**hit["args"])
+    except Exception as e:  # noqa: BLE001 - no network, an API down, a stop that has gone: never lose the call
+        print(f"router: nlp could not use {text!r} ({e})")
+    cmd = cmd or command(text)
+    if cmd in cards:  # one or two words the keywords know, the way they always did
+        return cmd, cards[cmd]()
+    return None
+
+
 def route(text, cards, call=False, password=PASSWORD):
     """-> {"kind": card | print | call | hangup | answer | ignored, "cmd": the keyword or None,
     "image": a receipt to print (if any), "say": for the earpiece (if any), "text", "cost"}.
@@ -45,7 +61,8 @@ def route(text, cards, call=False, password=PASSWORD):
     if cmd == "print":  # the recipe itself if the last answer used one, else the last receipt
         if cookbook.last:
             path = cookbook.last
-            return {"kind": "print", "cmd": cmd, "image": layout.recipe(path.read_text(encoding="utf-8"))}
+            return {"kind": "print", "cmd": cmd,
+                    "image": layout.recipe(path.read_text(encoding="utf-8"), photo=cookbook.photo(path))}
         return {"kind": "print", "cmd": cmd, "image": last()} if last else {"kind": "ignored", "cmd": cmd}
     if call:
         if cmd == "bye":
@@ -60,14 +77,8 @@ def route(text, cards, call=False, password=PASSWORD):
     # keyword match on "tog", and "hva blir været i Bergen i morgen" is a forecast for Bergen tomorrow -
     # neither needs a model. nlp only answers when it's sure (None is "no rule", ESCALATE is "the model's")
     # and if it then can't fetch, we fall through rather than leaving the person with nothing.
-    try:
-        hit = nlp.match(text)
-        if isinstance(hit, dict) and hit["intent"] in cards:
-            return {"kind": "card", "cmd": hit["intent"], "image": cards[hit["intent"]](**hit["args"])}
-    except Exception as e:  # noqa: BLE001 - no network, an API down, a stop that has gone: never lose the call
-        print(f"router: nlp could not use {text!r} ({e})")
-    if cmd in cards:  # one or two words the keywords know, the way they always did
-        return {"kind": "card", "cmd": cmd, "image": cards[cmd]()}
+    if hit := receipt(text, cards, cmd):
+        return {"kind": "card", "cmd": hit[0], "image": hit[1]}
     if len(text.split()) < 2:  # ponytail: drops coughs and whisper's one-word hallucinations
         return {"kind": "ignored", "cmd": cmd}
     answer, dollars = agent.ask(text)
@@ -76,7 +87,7 @@ def route(text, cards, call=False, password=PASSWORD):
         make = lambda: layout.recipe(answer)
     elif cookbook.last:  # it read or drafted a recipe but only talked about it: the recipe itself
         path = cookbook.last
-        make = lambda: layout.recipe(path.read_text(encoding="utf-8"))
+        make = lambda: layout.recipe(path.read_text(encoding="utf-8"), photo=cookbook.photo(path))  # by voice: with its photo
     else:
         make = lambda: layout.answer(text, answer, icon=icon)
     last = make

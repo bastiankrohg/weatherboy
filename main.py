@@ -4,6 +4,7 @@
     python main.py --mic USB --speaker USB --printer 192.168.1.50 --phone
     python phone.py                                ESP8266 hook switch over the USB cable, + LCD bring-up
     http://<this machine>:8615                     web page: all receipts, Claude, recipes, photos
+    python main.py --gui                           ...and the voice as an orb in a window on this machine
     python listen.py USB                           live mic level, to pick --threshold
     python speak.py hei, tester en to              Piper voice through the default output
     python printer.py 192.168.1.50                 stdlib smoke-test page
@@ -17,6 +18,7 @@ from datetime import datetime
 
 import agent
 import layout
+import orb
 import printq
 import router
 import web
@@ -41,6 +43,7 @@ def main():
                    help="the ESP in the F615: listen only while off hook (ESP8266 over USB, ESP32 over WiFi)")
     p.add_argument("--phone-port", help="serial port of the ESP8266 (default: the first that looks like an ESP)")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
+    p.add_argument("--gui", action="store_true", help="show the voice as an orb in a window (the page at /orb)")
     p.add_argument("--tunnel", help="also run this Cloudflare tunnel for the web page, e.g. weatherboy")
     a = p.parse_args()
     # an emoji in an answer must not crash the loop on a cp1252 console; flush each line for service logs
@@ -50,22 +53,26 @@ def main():
     if a.web:
         web.start(a.web, a.printer, a.tunnel)
         print(web.banner())
+        if a.gui:
+            orb.open_window(f"http://localhost:{a.web}/orb")
     import speak
     phone = None
     if a.phone:
         import phone as esp
-        phone = esp.Phone(esp.open_link(a.phone_port))
+        phone = esp.shared(a.phone_port)  # the web page's ESP card talks to the same board
         print(f"phone: {phone.link.where}")
 
     def hung_up():
         return bool(phone) and not a.text and not phone.lifted()
 
     def show(title, text="", size=16):
+        orb.set(label=title)
         if phone:
             phone.show(layout.lcd(title, text, size))
 
     def wait_for_lift():
         shown = None
+        orb.set("idle", heard="", said="")
         while hung_up():
             now = datetime.now()
             if now.minute != shown:  # idle screen: a clock
@@ -82,7 +89,8 @@ def main():
             speak.play(t, a.speaker, a.volume, abort=hung_up)
 
     def say(text):
-        speak.say(text, a.speaker, a.volume, abort=hung_up)
+        orb.set("speak", said=text)
+        speak.say(text, a.speaker, a.volume, abort=hung_up, level=orb.level)
 
     def out(img, label="kvittering"):
         """The same funnel the web page uses: rendered once, printed if the printer takes it, and kept in
@@ -104,10 +112,12 @@ def main():
     def hear(wait):
         if a.text:
             return input("(call) " if chat else "? ").strip()
+        orb.set("listen")
         show("I samtale" if chat else "Lytter...")
-        audio = listen.record(a.mic, a.threshold, wait=wait, abort=hung_up)
+        audio = listen.record(a.mic, a.threshold, wait=wait, abort=hung_up, level=orb.level)
         if audio is None:
             return None
+        orb.set("think")
         tone(speak.BLIP)
         return stt(audio)[0].strip()
 
@@ -123,6 +133,7 @@ def main():
                 chat = False
                 tone(speak.BUSY)
                 continue
+            orb.set("think", heard=q)
             cmd = router.command(q, password)
             print(f"> {q}" + (f"   [{cmd}]" if cmd else ""))
             show("Tenker..." if not cmd or cmd == "chat" else cmd.capitalize(), q)
@@ -131,6 +142,7 @@ def main():
                 out(r["image"], label=cmd if cmd and cmd != "chat" else (r.get("cmd") or "kvittering"))
             if r["kind"] == "answer":
                 print(f"{r['text']}\n[~${r['cost']:.4f}, ${agent.spent:.4f} since start]\n")
+                orb.set(said=r["text"])
             if r["kind"] == "call":
                 tone(speak.RINGBACK)
                 say(r["say"])
@@ -146,6 +158,7 @@ def main():
             break
         except Exception as e:  # keep the handset alive; one bad API call shouldn't kill the loop
             print(f"error: {e!r}")
+            orb.set("error")
             show("Feil", repr(e))
             tone(speak.BUSY)
 

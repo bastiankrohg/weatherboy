@@ -1,5 +1,6 @@
 """Receipt buttons wished for on the web page: a name, the prompt Claude runs when pressed, an icon.
-Data, not code: a wish can't change the server, only what Claude is asked."""
+Data, not code: a wish can't change the server, only what Claude is asked. A new one waits ("pending") until
+the admin approves it, on the page or by closing its GitHub issue (issues.py)."""
 import json
 import threading
 from pathlib import Path
@@ -9,9 +10,14 @@ _lock = threading.Lock()
 last = None  # the preset created during the current request, for the page to show
 
 
-def items():
+def _all():
     with _lock:
         return json.loads(FILE.read_text(encoding="utf-8")) if FILE.exists() else []
+
+
+def items(pending=False):
+    """The buttons on the page; pending=True: the wishes still waiting for the admin instead."""
+    return [p for p in _all() if bool(p.get("pending")) == pending]
 
 
 def _save(entries):
@@ -21,14 +27,29 @@ def _save(entries):
     tmp.replace(FILE)
 
 
-def get(pid):
-    return next(p for p in items() if p["id"] == pid)
+def get(pid, pending=False):
+    return next(p for p in items(pending) if p["id"] == pid)
 
 
 def remove(pid):
     with _lock:
         entries = json.loads(FILE.read_text(encoding="utf-8")) if FILE.exists() else []
         _save([p for p in entries if p["id"] != pid])
+
+
+def _change(pid, **fields):
+    with _lock:
+        entries = json.loads(FILE.read_text(encoding="utf-8")) if FILE.exists() else []
+        _save([{k: v for k, v in (p | fields).items() if v is not None} if p["id"] == pid else p for p in entries])
+
+
+def approve(pid):
+    """A wish becomes a button."""
+    _change(pid, pending=None)
+
+
+def set_issue(pid, number):
+    _change(pid, issue=number)
 
 
 def create_preset(name: str, prompt: str, icon: str = "question") -> str:
@@ -47,6 +68,6 @@ def create_preset(name: str, prompt: str, icon: str = "question") -> str:
     with _lock:
         entries = json.loads(FILE.read_text(encoding="utf-8")) if FILE.exists() else []
         last = {"id": max((p["id"] for p in entries), default=0) + 1, "name": name, "prompt": prompt,
-                "icon": icon if icon in layout.ICONS else "question"}
+                "icon": icon if icon in layout.ICONS else "question", "pending": True}
         _save(entries + [last])
-    return f"Created the button {name!r}."
+    return f"Created the button {name!r}. It appears once the admin has approved it."

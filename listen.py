@@ -14,9 +14,10 @@ def device(mic):
     return int(mic) if mic and mic.isdigit() else mic  # index, or a name substring like "USB"
 
 
-def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=None):
+def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=None, level=None):
     """Block until RMS > threshold, then return audio until `silence` seconds of quiet.
-    Returns None if nobody starts talking within `wait` seconds, or as soon as abort() is true (hung up)."""
+    Returns None if nobody starts talking within `wait` seconds, or as soon as abort() is true (hung up).
+    level: called with each block's RMS, for a meter (the orb)."""
     pre = collections.deque(maxlen=5)  # 0.5 s pre-roll so the first syllable survives
     buf, quiet, waited = [], 0.0, 0.0
     with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", device=device(mic), blocksize=BLOCK) as s:
@@ -24,7 +25,10 @@ def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=Non
             x = s.read(BLOCK)[0][:, 0]
             if abort and abort():
                 return None
-            loud = np.sqrt(np.mean(x * x)) > threshold
+            rms = float(np.sqrt(np.mean(x * x)))
+            if level:
+                level(rms)
+            loud = rms > threshold
             if not buf:
                 waited += BLOCK / RATE
                 if wait and waited > wait:

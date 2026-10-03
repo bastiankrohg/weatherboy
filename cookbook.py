@@ -34,6 +34,20 @@ def _path(name):
     return p
 
 
+PHOTOS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def photo(recipe):
+    """The dish's photo, if the collection has one: the file a `bilde:` line in the front matter names (relative
+    to the recipe), else a picture with the recipe's own name next to it (pannekaker.jpg by pannekaker.md).
+    recipe: a name as list_recipes shows it, or the recipe file. -> Path or None"""
+    p = recipe if isinstance(recipe, Path) else _path(recipe)
+    m = re.search(r"^bilde:\s*(.+?)\s*$", p.read_text(encoding="utf-8"), re.M | re.I)
+    tries = [(p.parent / m[1]).resolve()] if m else []
+    tries += [p.with_suffix(ext) for e in PHOTOS for ext in (e, e.upper())]
+    return next((t for t in tries if t.is_relative_to(ROOT) and t.is_file()), None)
+
+
 def read_recipe(name: str) -> str:
     """Full text of one recipe from the user's collection.
 

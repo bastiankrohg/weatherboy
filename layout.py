@@ -2,6 +2,7 @@
 import math
 import random
 import re
+import threading
 from datetime import datetime
 from functools import lru_cache
 
@@ -81,9 +82,19 @@ def _canvas():
     return img, ImageDraw.Draw(img)
 
 
+HEADER = threading.local()  # HEADER.off: this thread's receipts skip the top line (the web page's switch)
+
+
+def header_on():
+    return not getattr(HEADER, "off", False)
+
+
 def _header(d, when=None, label="WEATHERBOY", icon=None):
-    """An icon (see ICONS) or a tracked-out small-caps label on the left, a timestamp on the right. -> next y."""
+    """An icon (see ICONS) or a tracked-out small-caps label on the left, a timestamp on the right. -> next y.
+    With the header switched off, nothing: just the margin the first line would have had."""
     small, x, y = font(SANS, 20), M, 64  # 8 mm above the first mark
+    if not header_on():
+        return y - 24
     if icon:
         ICONS.get(icon, ICONS["question"])(d, M, y - 8)
     for ch in "" if icon else label:
@@ -330,9 +341,36 @@ def is_recipe(text):
     return re.search(r"^## (Ingredienser|Ingredients)\s*$", text, re.M | re.I) is not None
 
 
-def recipe(text, when=None, icon=None):
+@lru_cache(maxsize=8)
+def _dish(path, mtime):
+    """A recipe's photo across the whole paper, at most square (the middle of a tall one), dithered on its own
+    so the text around it stays crisp. Cached per file version: the dither is slow, and previews repeat it."""
+    from PIL import ImageOps
+    pic = ImageOps.exif_transpose(Image.open(path)).convert("L")
+    pic = pic.resize((DOTS, round(pic.height * DOTS / pic.width)), Image.LANCZOS)
+    if pic.height > DOTS:
+        top = (pic.height - DOTS) // 2
+        pic = pic.crop((0, top, DOTS, top + DOTS))
+    return dither(pic)
+
+
+def _photo_under_title(img, y, photo):
+    """-> next y. photo: a Path, or None for no photo."""
+    if not photo:
+        return y
+    try:
+        pic = _dish(str(photo), photo.stat().st_mtime)
+    except OSError as e:  # not a picture PIL can read (a HEIC, a broken file): the recipe still prints
+        print(f"layout: no photo from {photo.name} ({e})")
+        return y
+    img.paste(pic, (0, y + 6))
+    return y + 6 + pic.height + 14
+
+
+def recipe(text, when=None, icon=None, photo=None):
     """Kitchen card: tick boxes to check ingredients off with a pen, numbered circles for the steps.
-    Shopping lists use it too (section "Varer", the bag icon)."""
+    Shopping lists use it too (section "Varer", the bag icon). photo: the dish's picture (a Path), full width
+    under the title."""
     meta, title, intro, sections = parse_recipe(re.sub(r"\*\*(.+?)\*\*", r"\1", text))
     small, body, sub, head, num = font(SANS, 20), font(SANS, 28), font(BOLD, 26), font(BOLD, 44), font(BOLD, 20)
     img, d = _canvas()
@@ -341,6 +379,7 @@ def recipe(text, when=None, icon=None):
     for line in wrap(title, head):
         d.text((M, y), line, font=head, fill=0)
         y += 52
+    y = _photo_under_title(img, y, photo)
     y += 4
     for line in wrap(" ".join(intro), font(SANS, 24)):
         d.text((M, y), line, font=font(SANS, 24), fill=0)
@@ -399,9 +438,9 @@ def ingredients(text):
             for kind, s in items if kind == "item"]
 
 
-def recipe_short(text, when=None):
+def recipe_short(text, when=None, photo=None):
     """The fridge version: title and facts on one line, ingredients in two columns, steps as plain numbered
-    lines in smaller type. No intro, no tips: about half the paper of recipe()."""
+    lines in smaller type. No intro, no tips: about half the paper of recipe(). photo: as in recipe()."""
     meta, title, _, sections = parse_recipe(re.sub(r"\*\*(.+?)\*\*", r"\1", text))
     small, body, bold, head = font(SANS, 18), font(SANS, 22), font(BOLD, 22), font(BOLD, 34)
     img, d = _canvas()
@@ -410,6 +449,7 @@ def recipe_short(text, when=None):
     for line in wrap(title, head):
         d.text((M, y), line, font=head, fill=0)
         y += 40
+    y = _photo_under_title(img, y, photo)
     facts = " · ".join(x for x in (meta.get("porsjoner") and f"{meta['porsjoner']} pors.", meta.get("tid")) if x)
     if facts:
         d.text((M, y + 2), facts, font=small, fill=0)
@@ -542,11 +582,13 @@ def photo(picture, when=None):
     picture = picture.convert("L").resize((DOTS, round(picture.height * DOTS / picture.width)), Image.LANCZOS)
     small = font(SANS, 20)
     img, d = _canvas()
-    camera(d, M, 24)
-    stamp = f"{when or datetime.now():%d.%m.%Y %H:%M}"
-    d.text((DOTS - M - small.getlength(stamp), 30), stamp, font=small, fill=0)
-    img.paste(picture, (0, 72))
-    return img.crop((0, 0, DOTS, min(72 + picture.height + 8, MAX_H)))
+    top = 72 if header_on() else 0
+    if top:
+        camera(d, M, 24)
+        stamp = f"{when or datetime.now():%d.%m.%Y %H:%M}"
+        d.text((DOTS - M - small.getlength(stamp), 30), stamp, font=small, fill=0)
+    img.paste(picture, (0, top))
+    return img.crop((0, 0, DOTS, min(top + picture.height + 8, MAX_H)))
 
 
 def word(e, label, when=None):

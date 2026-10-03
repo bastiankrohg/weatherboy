@@ -2,7 +2,7 @@
 data/printq.json as the order.
 
     python printq.py             what's waiting
-    python printq.py 192.168.0.217   print everything unheld, in order, then list what didn't go
+    python printq.py 192.168.0.108   print everything unheld, in order, then list what didn't go
 
 Everything that prints goes through print_or_queue(): the job goes out now if it can, and stays in
 the queue if the printer is unconfigured, off, busy or out of paper. Nothing is lost, and the web

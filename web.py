@@ -1,6 +1,6 @@
 """Weatherboy's web page: every receipt, Claude, recipes and photo printing from a browser on the LAN.
 
-    python web.py --printer 192.168.0.217      just the web page (main.py starts it too, see --web)
+    python web.py --printer 192.168.0.108      just the web page (main.py starts it too, see --web)
 
 Every endpoint that makes a receipt returns its PNG preview, decoded from the actual job bytes. Printing is
 ?print=1 on the same request, so the page previews first and prints as a second, deliberate tap. A printer that
@@ -8,6 +8,7 @@ is off, busy or out of paper doesn't lose the job: it lands in printq's queue an
 reply says so in X-Queued.
 ponytail: no login. Anyone on the LAN can print and spend API credit. Add a shared password if the flat grows.
 """
+import hmac
 import io
 import json
 import os
@@ -30,6 +31,8 @@ import agent
 import cookbook
 import daily
 import home
+import issues
+import orb
 import layout
 import local
 import presets
@@ -43,6 +46,7 @@ import words
 PORT = 8615
 MAX_UPLOAD = 25_000_000  # bytes; a big phone photo is ~10 MB
 PAGE = Path(__file__).with_name("web.html")
+ORB_PAGE = Path(__file__).with_name("orb.html")
 PRINTER = None           # printer IP, set by start(); None = previews only
 URL = f"http://127.0.0.1:{PORT}"  # this page's address for the QR code, set by start()
 PUBLIC_URL = os.environ.get("WEATHERBOY_PUBLIC_URL", "")  # the tunnel's address, e.g. https://weatherboy.example.no
@@ -124,9 +128,107 @@ def edits(q):
             "contrast": clamp(float(q.get("contrast", 1)), 0.2, 4.0)}
 
 
+def copies(q):
+    """?copies=3: how many of it to print. Capped, so a typo doesn't empty the paper roll."""
+    return min(max(int(q.get("copies", 1)), 1), 20)
+
+
 LABELS = {"weather": "vær", "departures": "avganger", "flights": "fly", "art": "kunst", "qr": "qr-kode",
           "word": "dagens ord"}
 BY_KIND = {"card": "kvittering", "answer": "svar", "print": "utskrift"}
+
+
+def file_issue(preset, wish):
+    """A GitHub issue for a new wish -> its URL, or None (no token, or GitHub said no: the wish still waits)."""
+    if not issues.enabled():
+        return None
+    try:
+        number, url = issues.open_issue(preset, wish)
+        presets.set_issue(preset["id"], number)
+        return url
+    except requests.RequestException as e:
+        print(f"wishes: no GitHub issue for {preset['name']!r} ({e})")
+        return None
+
+
+def decide(pid, approved):
+    """The admin's verdict, from the page: the wish becomes a button or goes; its issue is closed to match."""
+    wish = presets.get(pid, pending=True)
+    presets.approve(pid) if approved else presets.remove(pid)
+    if wish.get("issue") and issues.enabled():
+        try:
+            issues.close(wish["issue"], approved)
+        except requests.RequestException as e:
+            print(f"wishes: couldn't close issue #{wish['issue']} ({e})")
+
+
+def sync_wishes():
+    """The other way round: a wish whose issue the admin closed on GitHub is approved or turned down here."""
+    for w in presets.items(pending=True):
+        if w.get("issue"):
+            try:
+                v = issues.verdict(w["issue"])
+            except requests.RequestException:
+                continue
+            if v:
+                presets.approve(w["id"]) if v == "approved" else presets.remove(w["id"])
+
+
+def keep_syncing_wishes(every=120):
+    while True:
+        sync_wishes()
+        time.sleep(every)
+
+
+def wishes_json(admin):
+    return {"admin": admin, "github": issues.enabled(),
+            "pending": [{k: w[k] for k in ("id", "name", "prompt", "icon") if k in w} for w in presets.items(pending=True)]}
+
+
+def esp():
+    """-> (the phone base on the USB cable, or None; why not). The same board main.py's voice loop reads."""
+    import importlib.util
+    if importlib.util.find_spec("serial") is None:
+        return None, "pyserial mangler: uv sync --extra phone"
+    import phone
+    try:
+        board = phone.shared(serial_only=True)
+    except Exception as e:  # noqa: BLE001 - e.g. the port is busy (an Arduino serial monitor has it open)
+        return None, f"Får ikke åpnet porten: {e}"
+    return (board, None) if board else (None, "Ingen ESP8266 på USB-kabelen")
+
+
+def esp_state():
+    board, why = esp()
+    if not board:
+        return {"found": False, "why": why}
+    out = {"found": True, "where": board.link.where, "lifted": board.lifted()}
+    try:
+        out["config"] = board.config()
+    except (TimeoutError, RuntimeError, ValueError) as e:
+        out["why"] = str(e)
+    return out
+
+
+def esp_post(d):
+    """{set: {host, port, ssid, pass}} saves them on the board (an empty pass leaves it as it is),
+    {test: true} has it knock on the server, {restart: true} reboots it."""
+    board, why = esp()
+    if not board:
+        raise RuntimeError(why)
+    if "set" in d:
+        changes = {k: str(v).strip() for k, v in d["set"].items() if k in ("host", "port", "ssid", "pass")}
+        if not changes.get("pass"):
+            changes.pop("pass", None)
+        board.set(**changes)
+        return esp_state() | {"said": "Lagret på brettet."}
+    if d.get("test"):
+        reply = board.ask("TEST", timeout=6)
+        return esp_state() | {"said": reply.removeprefix("OK ").removeprefix("ERR "), "ok": reply.startswith("OK")}
+    if d.get("restart"):
+        board.ask("RESTART")
+        return {"found": True, "said": "Starter på nytt …"}
+    raise ValueError("Ukjent ESP-kommando")
 
 
 def label_for(kind, cmd):
@@ -135,7 +237,7 @@ def label_for(kind, cmd):
 
 
 def render(img, do_print, brightness=1.0, contrast=1.0, dither=False, label="kvittering", source=None,
-           queue=False, printer_ip=None):
+           queue=False, printer_ip=None, copies=1):
     """Every receipt goes through here: grayscale page -> brightness/contrast -> threshold (text) or Atkinson
     dither (pictures) -> printer rows. Returns (the PNG of exactly what the head fires, what happened to it).
 
@@ -143,7 +245,9 @@ def render(img, do_print, brightness=1.0, contrast=1.0, dither=False, label="kvi
     in the queue either way - nothing is lost - so outcome is {"printed", "id" of the queued job or None, "why"}.
     printer_ip defaults to the server's; main.py passes its own, since it prints from the handset.
     On text, brightness moves the threshold across the antialiased edges: brighter prints thinner strokes, darker
-    prints bolder ones. Crops, rotations and drawings happen in the page's editor (/api/image)."""
+    prints bolder ones. Crops, rotations and drawings happen in the page's editor (/api/image).
+    copies: that many of it, each its own job (and so its own cut). Once the printer turns one away, the rest
+    go straight into the queue behind it, in order, rather than knocking again; the outcome is the last one's."""
     img = img.convert("L")
     if brightness != 1:
         img = ImageEnhance.Brightness(img).enhance(brightness)
@@ -153,30 +257,33 @@ def render(img, do_print, brightness=1.0, contrast=1.0, dither=False, label="kvi
         img = layout.dither(img)
     job = printer.encode(layout.to_rows(img))
     outcome = {"printed": False, "id": None, "why": None}
-    if queue:
-        outcome = {"printed": False, "id": printq.add(img, label, source, dither=dither)["id"], "why": "lagt i køen"}
-    elif do_print:
-        outcome = printq.print_or_queue(img, label, source, printer_ip or PRINTER, dither=dither)
+    for _ in range(max(1, copies) if queue or do_print else 1):
+        if queue or outcome["id"]:
+            outcome = {"printed": False, "id": printq.add(img, label, source, dither=dither)["id"],
+                       "why": outcome["why"] or "lagt i køen"}
+        elif do_print:
+            outcome = printq.print_or_queue(img, label, source, printer_ip or PRINTER, dither=dither)
     buf = io.BytesIO()
     layout.from_rows(printer.decode(job)).save(buf, "PNG")
     return buf.getvalue(), outcome
 
 
-def answer_json(answer, dollars, icon=None):
+def answer_json(answer, dollars, icon=None, model=None):
     """What the page needs from one of Claude's answers."""
     theme, answer = layout.theme(answer)  # the "tema: x" line becomes the receipt's icon
     return {"answer": answer, "icon": icon or theme, "cost": dollars, "spent": agent.spent,
-            "model": agent.MODELS[agent.model]["name"],
+            "model": agent.MODELS[model or agent.model]["name"],
             # the recipe it read or drafted, so the page shows that card rather than a short note
             "recipe": cookbook.last and cookbook.last.relative_to(cookbook.ROOT).with_suffix("").as_posix()}
 
 
 def printer_here():
-    """Is this machine on the printer's network, i.e. at home? A quick knock on the printer's port."""
+    """Is this machine on the printer's network, i.e. at home? A knock on the printer's port, as patient as
+    printing is: on WiFi the printer can take seconds to answer, and a short knock would call that away."""
     if not PRINTER:
         return True  # no printer configured: the network we're on is all we have to go by
     try:
-        socket.create_connection((PRINTER, 9100), timeout=2).close()
+        printer.connect(PRINTER).close()
         return True
     except OSError:
         return False
@@ -330,6 +437,10 @@ def queue_post(q, body):
     return queue_state()
 
 
+class NeedsKey(Exception):
+    """A paid model asked for through the tunnel without the visitor's own key: the page asks for one."""
+
+
 class Handler(BaseHTTPRequestHandler):
     def reply(self, code, body, ctype, headers=()):
         self.send_response(code)
@@ -339,6 +450,29 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def online(self):
+        """Came in through the tunnel (print.<domain>), not straight off the local network."""
+        return self.headers.get("CF-Connecting-IP") is not None
+
+    def admin(self):
+        """The admin: whoever sends WEATHERBOY_ADMIN from .env as X-Admin, or someone at this machine's own
+        keyboard (a request from itself, not through the tunnel)."""
+        want, given = os.environ.get("WEATHERBOY_ADMIN", ""), self.headers.get("X-Admin", "")
+        if want and given and hmac.compare_digest(want.encode(), given.encode()):
+            return True
+        return not self.online() and self.client_address[0] in ("127.0.0.1", "::1")
+
+    def model(self, d):
+        """-> (model, API key) for a question from the page. The page sends its own pick; through the tunnel,
+        a paid model only runs on the visitor's own key (X-Api-Key), never on the flat's."""
+        m, key = d.get("model") or agent.model, self.headers.get("X-Api-Key") or None
+        if m not in agent.MODELS:
+            raise ValueError(f"Ukjent modell {m!r}")
+        if m != "local" and self.online() and not key:
+            raise NeedsKey("Claude-modellene koster penger. Utenfra kjører de på din egen API-nøkkel: "
+                           "legg den inn under modellvelgeren, eller velg den lokale modellen (gratis).")
+        return m, key
 
     def json(self, obj, code=200):
         self.reply(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
@@ -364,6 +498,14 @@ class Handler(BaseHTTPRequestHandler):
     def _get(self, path):
         if path == "/":
             self.reply(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path == "/orb":  # the voice loop on screen, for the Mac it runs on (main.py --gui)
+            self.reply(200, ORB_PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path == "/api/orb":  # Server-Sent Events: the orb's state, FPS times a second, until the page goes
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            orb.stream(self.wfile)
         elif path == "/api/health":
             self.json(health())
         elif path == "/api/recipes":
@@ -375,7 +517,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/url":
             self.json({"url": URL})
         elif path == "/api/recipe-text":
-            self.json({"markdown": cookbook.read_recipe(parse_qs(urlparse(self.path).query)["name"][0])})
+            name = parse_qs(urlparse(self.path).query)["name"][0]
+            self.json({"markdown": cookbook.read_recipe(name), "photo": bool(cookbook.photo(name))})
         elif path == "/api/recipe-template":
             tpl = cookbook.ROOT / "_mal.md"
             self.json({"markdown": tpl.read_text(encoding="utf-8") if tpl.exists() else
@@ -384,13 +527,17 @@ class Handler(BaseHTTPRequestHandler):
             self.json(shoplist.items())
         elif path == "/api/presets":
             self.json(presets.items())
+        elif path == "/api/esp":  # the phone base: where it is, its settings and state
+            self.json(esp_state())
+        elif path == "/api/wishes":  # what's waiting for the admin, and whether this visitor is the admin
+            self.json(wishes_json(self.admin()))
         elif path == "/api/daily":
             self.json({"settings": daily.settings(), "done": daily.done(),
                        "langs": [{"id": k, "name": v[0]} for k, v in words.LANGS.items()]})
         elif path == "/api/stops":
             self.json([{"name": n, "mode": m} for n, m in agent.STOPS])
         elif path == "/api/models":
-            self.json({"model": agent.model, "spent": agent.spent,
+            self.json({"model": agent.model, "spent": agent.spent, "online": self.online(),
                        "models": [{"id": k, "name": v["name"], "price": v["price"]} for k, v in agent.MODELS.items()]})
         elif path == "/api/queue":
             self.json(queue_state())
@@ -403,7 +550,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.json({"error": "not found"}, 404)
 
-    def receipt(self, img, q, dither=False, label="kvittering", source=None):
+    def receipt(self, img, q, dither=False, label="kvittering", source=None, headers=()):
         """Every receipt endpoint ends here. ?raw=1 hands the page's editor the grayscale original
         (X-Dither says whether it's a picture); otherwise it's rendered, and printed with ?print=1.
         ?queue=1 skips the printer and puts it in the queue to print next. X-Queued or X-Printed says
@@ -415,8 +562,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, buf.getvalue(), "image/png", [("X-Dither", "1" if dither else "0")])
             return {"printed": False, "id": None, "why": None}
         png, outcome = render(img, q.get("print") == "1", **edits(q), dither=dither, label=label,
-                              source=source, queue=q.get("queue") == "1")
-        headers = [("X-Queued", outcome["id"])] if outcome["id"] else [("X-Printed", "1")] if outcome["printed"] else []
+                              source=source, queue=q.get("queue") == "1", copies=copies(q))
+        headers = list(headers) + ([("X-Queued", outcome["id"])] if outcome["id"] else
+                                   [("X-Printed", "1")] if outcome["printed"] else [])
         if outcome["why"]:  # percent-encoded: a header may only carry latin-1
             headers.append(("X-Why", quote(outcome["why"], safe="")))
         self.reply(200, png, "image/png", headers)
@@ -427,13 +575,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        layout.HEADER.off = q.get("header") == "0"  # ?header=0: no icon and timestamp on top, for this request
         n = int(self.headers.get("Content-Length") or 0)
         if n > MAX_UPLOAD:
             return self.json({"error": "Filen er for stor (maks 25 MB)."}, 413)
         body = self.rfile.read(n)
         try:
             if url.path == "/api/ask":
-                self.json(answer_json(*agent.ask(json.loads(body)["q"])))
+                d = json.loads(body)
+                m, key = self.model(d)
+                self.json(answer_json(*agent.ask(d["q"], use=m, api_key=key), model=m))
+            elif url.path == "/api/heard":  # the question box, dumb first: a receipt the rules can make, else 204
+                text = json.loads(body)["q"]
+                hit = router.receipt(text, CARDS)
+                if not hit:
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+                name = label_for("card", hit[0])
+                self.receipt(hit[1], q, label=name, source={"text": text}, headers=[("X-Card", quote(name, safe=""))])
             elif url.path == "/api/voice":  # a transcript from any speech pipeline, routed like the handset's
                 d = json.loads(body)
                 r = router.route(d["text"], CARDS, call=bool(d.get("call")))
@@ -445,11 +605,29 @@ class Handler(BaseHTTPRequestHandler):
                 self.json({k: v for k, v in r.items() if k != "image"}
                           | {"printed": bool(wanted) and outcome["printed"], "queued": outcome["id"]})
             elif url.path == "/api/preset":  # a wished-for button: its prompt, asked like a question
-                p = presets.get(json.loads(body)["id"])
-                self.json(answer_json(*agent.ask(p["prompt"]), icon=p["icon"]))
+                d = json.loads(body)
+                p, (m, key) = presets.get(d["id"]), self.model(d)
+                self.json(answer_json(*agent.ask(p["prompt"], use=m, api_key=key), icon=p["icon"], model=m))
             elif url.path == "/api/wish":  # "ønsk deg en kvittering": Claude designs a preset, if it can
-                reply, preset, dollars = agent.design_preset(json.loads(body)["text"])
+                key = self.headers.get("X-Api-Key") or None
+                if self.online() and not key:  # designing one always takes a paid model
+                    raise NeedsKey("Å lage en ny knapp bruker Claude, som koster penger. Utenfra kjører det på "
+                                   "din egen API-nøkkel: legg den inn under modellvelgeren.")
+                wish = json.loads(body)["text"]
+                reply, preset, dollars = agent.design_preset(wish, api_key=key)
+                if preset:  # it waits for the admin; a GitHub issue tells them, if there's a token for one
+                    preset["issue"] = file_issue(preset, wish)
                 self.json({"reply": reply, "preset": preset, "cost": dollars, "spent": agent.spent})
+            elif url.path == "/api/esp":  # change the phone base's settings: the admin's job, they include WiFi
+                if not self.admin():
+                    return self.json({"error": "Bare admin kan endre telefonen."}, 403)
+                self.json(esp_post(json.loads(body)))
+            elif url.path == "/api/wishes":  # the admin's verdict on a wished-for button: {approve: id} or {reject: id}
+                if not self.admin():
+                    return self.json({"error": "Bare admin kan godkjenne ønsker."}, 403)
+                d = json.loads(body)
+                decide(d.get("approve") or d.get("reject"), approved="approve" in d)
+                self.json(wishes_json(True))
             elif url.path == "/api/daily":  # switch the daily prints on/off, pick the language or the time
                 daily.update(json.loads(body))
                 self.json({"settings": daily.settings(), "done": daily.done()})
@@ -460,7 +638,9 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/presets":
                 presets.remove(json.loads(body)["remove"])
                 self.json(presets.items())
-            elif url.path == "/api/model":
+            elif url.path == "/api/model":  # the server's own: the handset's, and the page's at home
+                if self.online():
+                    return self.json({"error": "Utenfra velger du modell bare for denne enheten."}, 403)
                 agent.set_model(json.loads(body)["model"])
                 self.json({"model": agent.model})
             elif url.path == "/api/shopping":  # the shared list: {text} adds, {remove: [ids]} removes
@@ -477,8 +657,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(shoplist.items())
             elif url.path == "/api/text":  # everything printed from text: answers, recipes, lists
                 d = json.loads(body)
+                # {recipe: its name, photo: true}: a recipe from the collection, with its photo if it has one
+                dish = d.get("photo") and d.get("recipe") and cookbook.photo(d["recipe"])
                 if d.get("kind") == "short":
-                    return self.receipt(layout.recipe_short(d["a"]), q, label="oppskrift (kort)",
+                    return self.receipt(layout.recipe_short(d["a"], photo=dish), q, label="oppskrift (kort)",
                                         source={"q": d.get("q", ""), "kind": "short"})
                 if d.get("kind") == "shopping":
                     outcome = self.receipt(layout.recipe(d["a"], icon="shopping"), q, label="handleliste",
@@ -486,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
                     if outcome["printed"]:  # only once it's really on paper: "printet" on the page
                         shoplist.mark_printed(d.get("ids", []))
                     return
-                answer = layout.recipe(d["a"]) if layout.is_recipe(d["a"]) else layout.answer(
+                answer = layout.recipe(d["a"], photo=dish) if layout.is_recipe(d["a"]) else layout.answer(
                     d["q"], d["a"], icon=d.get("icon", "question"))
                 self.receipt(answer, q, label="oppskrift" if layout.is_recipe(d["a"]) else "svar",
                              source={"q": d.get("q", "")})
@@ -514,6 +696,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.receipt(CARDS[url.path[10:]](), q, label=label_for("card", url.path[10:]))
             else:
                 self.json({"error": "not found"}, 404)
+        except NeedsKey as e:
+            self.json({"error": str(e), "need_key": True}, 401)
+        except anthropic.AuthenticationError as e:
+            if not self.headers.get("X-Api-Key"):  # the flat's own key in .env is wrong: that's ours to fix
+                return self.json({"error": f"{type(e).__name__}: {e}"}, 500)
+            self.json({"error": "API-nøkkelen ble ikke godtatt. Sjekk den på console.anthropic.com.",
+                       "need_key": True}, 401)
         except Exception as e:  # one bad request shouldn't take the server down; tell the page what broke
             self.json({"error": f"{type(e).__name__}: {e}"}, 500)
 
@@ -576,6 +765,8 @@ def start(port=PORT, printer_ip=None, tunnel_name=None):
         threading.Thread(target=printq.drain, args=(PRINTER,), daemon=True).start()
     if tunnel_name:
         tunnel(tunnel_name)
+    if issues.enabled():
+        threading.Thread(target=keep_syncing_wishes, daemon=True).start()
     return server
 
 

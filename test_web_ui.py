@@ -28,6 +28,7 @@ words.generate = lambda lang, seen: {"word": "산책", "reading": "sanchaek", "k
                                      "example": "산책해요.", "example_reading": "sanchaekaeyo.",
                                      "example_meaning": "I take a walk.", "note": ""}
 presets.create_preset("Dagens ord", "Gi meg et sjeldent norsk ord.", "idea")
+presets.approve(presets.last["id"])  # a wish is a button once the admin says so
 web.CHECKS = {"printer": ("Skriver", lambda: {"level": "red", "state": "svarer ikke"}),  # fast fakes:
               "local": ("Lokal modell", lambda: {"level": "green", "state": "robotlab"})}   # no real services
 server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place

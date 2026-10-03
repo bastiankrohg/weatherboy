@@ -93,7 +93,7 @@ Each job is one PNG in `data/printq/`, and `data/printq.json` is the order, so t
 
 ```bash
 uv run printq.py                 # what's waiting
-uv run printq.py 192.168.0.217   # print everything unheld now, then list what didn't go
+uv run printq.py 192.168.0.108   # print everything unheld now, then list what didn't go
 ```
 
 The daily prints are deliberately *not* queued: `daily.py` already retries them every minute until they go out, and a copy in the queue would only print twice.
@@ -150,6 +150,10 @@ Two boards do this, and `phone.py` picks whichever is plugged in. The **ESP8266*
 **Why the cable:** the ESP and the machine running the server are two clients on the same router, and ours keeps clients apart (AP isolation), so the WiFi version never got through. A cable doesn't care what the router does, and works with the internet down.
 
 ### ESP8266 over USB serial (what's in ours)
+
+Ours now runs the Arduino sketch in [esp8266-phone-hook](https://github.com/bastiankrohg/esp8266-phone-hook) (hook switch on D5). It sends the same `HOOK 0/1` lines over USB as the MicroPython firmware below, and also reports to a server over WiFi. That server address, the port and the WiFi network can be changed on the page, in the **Telefonen** card (admin only). The server talks to the board over the cable, so no reflashing is needed. This needs `uv sync --extra phone` on the machine the board is plugged into.
+
+**Screen (planned):** a 0.96" 128×64 OLED (JMD0.96C, SSD1306 on I²C) goes on the same board: VCC to 3V3, GND to GND, SCL to D1, SDA to D2. Check the module's pin labels first, as some batches swap VCC and GND. `phone.frame()` already packs frames in the SSD1306's own memory order, so the firmware can copy them straight to the screen. Until the sketch draws them, frames are read and skipped. The wiring and quirks are in the [esp8266-phone-hook README](https://github.com/bastiankrohg/esp8266-phone-hook#screen-planned).
 
 ```mermaid
 flowchart LR
@@ -266,7 +270,7 @@ cp /path/to/.env .                        # ANTHROPIC_API_KEY, WEATHERBOY_PUBLIC
 For the tunnel, install `cloudflared` (`brew install cloudflared`, or the `darwin-amd64` release), copy `~/.cloudflared/` from the Windows laptop (`cert.pem`, the tunnel's `<id>.json` and `config.yml`, with `credentials-file:` pointing at the new path), then:
 
 ```sh
-uv run web.py --printer 192.168.0.217 --tunnel weatherboy
+uv run web.py --printer 192.168.0.108 --tunnel weatherboy
 ```
 
 `caffeinate -s` in front keeps the Mac from sleeping. Only one machine should run the tunnel at a time.

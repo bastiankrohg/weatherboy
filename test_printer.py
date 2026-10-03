@@ -93,6 +93,31 @@ assert "drafts/fiskesuppe-fra-bergen | Fiskesuppe |  | draft" in cookbook.list_r
 assert cookbook.read_recipe("drafts/fiskesuppe-fra-bergen").startswith("---\nkilde: https://x.no/a\n---\n\n# Fiskesuppe")
 cookbook.save_draft("Suppe", "---\ntid: 1 t\n---\n# Suppe", "https://y.no")
 assert cookbook.read_recipe("drafts/suppe").startswith("---\nkilde: https://y.no\ntid: 1 t\n---")
+
+# a dish's photo: the same name next to it, or what `bilde:` names; full width under the title, only if asked
+assert cookbook.photo("pannekaker") is None
+Image.new("L", (1200, 800), 128).save(cookbook.ROOT / "pannekaker.jpg")
+assert cookbook.photo("pannekaker").name == "pannekaker.jpg"
+(cookbook.ROOT / "drafts" / "bilder").mkdir()
+Image.new("L", (400, 900), 90).save(cookbook.ROOT / "drafts" / "bilder" / "suppe.png")
+(cookbook.ROOT / "drafts" / "suppe.md").write_text("---\nbilde: bilder/suppe.png\n---\n# Suppe\n\n## Ingredienser\n- vann\n",
+                                                   encoding="utf-8")
+assert cookbook.photo("drafts/suppe").name == "suppe.png"
+(cookbook.ROOT / "drafts" / "ute.md").write_text("---\nbilde: ../../hemmelig.png\n---\n# Ute", encoding="utf-8")
+assert cookbook.photo("drafts/ute") is None  # a photo must be inside the collection
+text = cookbook.read_recipe("pannekaker")
+plain, pictured = layout.recipe(text), layout.recipe(text, photo=cookbook.photo("pannekaker"))
+assert pictured.height - plain.height >= 576 * 800 // 1200
+assert set(pictured.crop((0, 200, 576, 500)).tobytes()) <= {0, 255}  # the photo is dithered already, text isn't
+assert layout.recipe(text, photo=cookbook.photo("drafts/suppe")).height - plain.height < 576 + 40  # tall: cropped square
+assert layout.recipe_short(text, photo=cookbook.photo("pannekaker")).height > layout.recipe_short(text).height
+(cookbook.ROOT / "ødelagt.md").write_text("# Ødelagt\n", encoding="utf-8")
+(cookbook.ROOT / "ødelagt.jpg").write_bytes(b"not a jpeg")
+assert layout.recipe("# Ødelagt", photo=cookbook.photo("ødelagt")).height == layout.recipe("# Ødelagt").height
+for p in ("ute.md", "suppe.md"):
+    (cookbook.ROOT / "drafts" / p).unlink()
+for p in ("ødelagt.md", "ødelagt.jpg"):
+    (cookbook.ROOT / p).unlink()
 (cookbook.ROOT / "_mal.md").write_text("# Mal\ntags: x", encoding="utf-8")
 assert "_mal" not in cookbook.list_recipes()
 
@@ -227,14 +252,14 @@ agent.load_env(env)
 assert os.environ["WB_TEST_A"] == "one" and os.environ["WB_TEST_B"] == "from the shell"
 if not (agent.client.api_key or agent.client.auth_token):
     try:
-        agent.ask("hei")
+        agent.ask("hei", use="claude-haiku-4-5")
         raise AssertionError("asked Claude without a key")
     except RuntimeError as e:
         assert "ANTHROPIC_API_KEY" in str(e)
 
-# models: Haiku by default, each model gets only settings it accepts; cost maths; switching starts fresh
+# models: the free local one by default, each model gets only settings it accepts; cost maths; switching starts fresh
 from types import SimpleNamespace as NS
-assert agent.model == os.environ.get("WEATHERBOY_MODEL", "claude-haiku-4-5")
+assert agent.model == os.environ.get("WEATHERBOY_MODEL", "local")
 hk, op = agent.params("claude-haiku-4-5"), agent.params("claude-opus-5-5")
 assert "output_config" not in hk and "thinking" not in hk and "fallbacks" not in hk
 assert {t["type"] for t in hk["tools"] if isinstance(t, dict)} == {"web_search_20250305", "web_fetch_20250910"}
@@ -361,6 +386,11 @@ home._home.update(v4=None, at=0.0)
 home.public_ipv4 = lambda: ipaddress.ip_address("193.157.162.12")  # the laptop is at the university now
 assert home.addresses(at_home=lambda: False)[0] == ipaddress.ip_address("84.214.212.9")  # away: the saved home
 assert not home.allowed("193.157.162.12", at_home=lambda: False)  # the university doesn't count as home
+_saved, home.FILE = home.FILE, home.FILE.with_name("ingen.json")
+home._home.update(v4=None, at=0.0)
+assert home.addresses(at_home=lambda: False)[0] is None  # the printer missed a knock, nothing saved yet...
+assert _time.time() - home._home["at"] > home.REFRESH - home.RETRY - 1  # ...so it asks again soon, not in 5 min
+home.FILE = _saved
 home._home.update(v4=ipaddress.ip_address("84.214.212.9"), v6=ipaddress.ip_network("2a02:fe0:c43e:4600::/56"),
                   at=_time.time())
 assert home.allowed("84.214.212.9") and home.allowed("2a02:fe0:c43e:4601::abcd")
@@ -386,6 +416,20 @@ ink = lambda out: Image.open(io.BytesIO(out[0])).convert("L").histogram()[0]
 txt = layout.answer("q", "Brødskive med brunost og syltetøy " * 6, t0)
 assert ink(web.render(txt, False, brightness=0.5)) > ink(web.render(txt, False)) > ink(web.render(txt, False, brightness=1.6))
 photo_png = web.render(pic, False, dither=True, contrast=1.8)[0]  # photos stay grayscale until the final dither
+
+# the page's "Topplinje" switch (?header=0): no icon and timestamp, and the paper that was theirs is saved
+with_top, with_photo = layout.answer("hva?", "Et svar."), layout.photo(pic)
+layout.HEADER.off = True
+assert layout.answer("hva?", "Et svar.").height < with_top.height and layout.photo(pic).height == with_photo.height - 72
+layout.HEADER.off = False
+
+# copies (?copies=3): each its own job, a preview prints none, and a typo can't empty the roll
+sent = []
+printer.send = lambda data, host, port=9100: sent.append(data)
+assert web.render(with_top, True, printer_ip="192.0.2.1", copies=3)[1]["printed"] and len(sent) == 3
+web.render(with_top, False, copies=3)
+assert len(sent) == 3 and web.copies({"copies": "999"}) == 20 and web.copies({}) == 1
+printer.send = real_send
 assert set(Image.open(io.BytesIO(photo_png)).convert("L").tobytes()) <= {0, 255}
 assert web.edits({"brightness": "99", "contrast": "0"}) == {"brightness": 3.0, "contrast": 0.2}
 assert agent.STOPS[0] == ("Oslo S", "rail") if "WEATHERBOY_STOPS" not in os.environ else True
@@ -397,9 +441,14 @@ assert layout.answer("q", "**Ordet:** mugga", t0).tobytes() == layout.answer("q"
 import presets
 presets.FILE = Path(tempfile.mkdtemp()) / "presets.json"
 assert "Dagens ord" in presets.create_preset("  Dagens   ord ", "Gi meg et sjeldent norsk ord.", icon="dinosaur")
-assert presets.last == {"id": 1, "name": "Dagens ord", "prompt": "Gi meg et sjeldent norsk ord.", "icon": "question"}
+assert presets.last == {"id": 1, "name": "Dagens ord", "prompt": "Gi meg et sjeldent norsk ord.", "icon": "question",
+                        "pending": True}  # a wish waits for the admin
 presets.create_preset("Månefase", "Hvilken månefase er det i kveld?", "idea")
+assert presets.items() == [] and [p["name"] for p in presets.items(pending=True)] == ["Dagens ord", "Månefase"]
+presets.approve(1)
+presets.approve(2)
 assert [p["name"] for p in presets.items()] == ["Dagens ord", "Månefase"] and presets.get(2)["icon"] == "idea"
+assert "pending" not in presets.get(1)
 presets.remove(1)
 assert [p["id"] for p in presets.items()] == [2]
 try:
@@ -571,6 +620,158 @@ srv2.shutdown()
 for (m, k), v in real.items():  # the gazetteers and the fetches back to themselves
     setattr(m, k, v)
 agent.ask = real_ask
+
+# the question box: rules first (a receipt, no model), then the model the device picked. Through the tunnel,
+# Claude only runs on the visitor's own key, and the server's model is the flat's to change, not theirs
+calls_made = []
+agent.ask = lambda q, voice=False, use=None, api_key=None: calls_made.append((q, use, api_key)) or ("tema: idea\nJa.", 0.0)
+srv3 = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+threading.Thread(target=srv3.serve_forever, daemon=True).start()
+home._home.update(v4=ipaddress.ip_address("84.214.212.9"), v6=None, at=_time.time())
+def ask3(path, body, tunnel=False, key=None):
+    h = {"Content-Type": "application/json"} | ({"CF-Connecting-IP": "84.214.212.9"} if tunnel else {}) \
+        | ({"X-Api-Key": key} if key else {})
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv3.server_port}{path}",
+                                                          json.dumps(body).encode(), h, method="POST"))
+        return r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
+code, hdr, png = ask3("/api/heard", {"q": "qr"})  # a keyword: the receipt itself
+assert code == 200 and urllib.parse.unquote(hdr["X-Card"]) == "qr-kode" and png[:4] == b"\x89PNG" and not calls_made
+assert ask3("/api/heard", {"q": "hvorfor er himmelen blå"})[0] == 204  # nothing for the rules: the page asks the model
+code, _, out = ask3("/api/ask", {"q": "hei", "model": "claude-opus-5-5"}, tunnel=True)
+assert code == 401 and json.loads(out)["need_key"] and not calls_made  # paid, from outside, no key: never ours
+assert ask3("/api/ask", {"q": "hei", "model": "local"}, tunnel=True)[0] == 200  # the free one is anyone's
+assert ask3("/api/ask", {"q": "hei", "model": "claude-opus-5-5"}, tunnel=True, key="sk-ant-theirs")[0] == 200
+assert ask3("/api/ask", {"q": "hei", "model": "claude-opus-5-5"})[0] == 200  # at home, the flat's key is fine
+assert calls_made == [("hei", "local", None), ("hei", "claude-opus-5-5", "sk-ant-theirs"), ("hei", "claude-opus-5-5", None)]
+assert ask3("/api/wish", {"text": "en vits"}, tunnel=True)[0] == 401
+assert ask3("/api/model", {"model": "claude-opus-5-5"}, tunnel=True)[0] == 403 and agent.model == "claude-haiku-4-5"
+# wishes: Claude's design waits; a GitHub issue says so; only the admin (or GitHub) turns it into a button
+import issues
+filed, closed = [], []
+issues.enabled = lambda: True
+issues.open_issue = lambda preset, wish: filed.append((preset["name"], wish)) or (7, "https://github.com/x/y/issues/7")
+issues.close = lambda n, approved: closed.append((n, approved))
+real_design = agent.design_preset
+def fake_design(text, api_key=None):
+    presets.last = None
+    presets.create_preset("Vits", "Fortell en kort vits.", "idea")
+    return "Laget.", presets.last, 0.0
+agent.design_preset = fake_design
+os.environ["WEATHERBOY_ADMIN"] = "hemmelig"
+code, _, out = ask3("/api/wish", {"text": "en vits"})
+wid = json.loads(out)["preset"]["id"]
+assert code == 200 and json.loads(out)["preset"]["issue"].endswith("/7") and filed == [("Vits", "en vits")]
+assert presets.get(wid, pending=True)["issue"] == 7 and "Vits" not in [p["name"] for p in presets.items()]
+def wishes3(body, tunnel=True, admin=None):
+    h = {"Content-Type": "application/json"} | ({"CF-Connecting-IP": "84.214.212.9"} if tunnel else {}) \
+        | ({"X-Admin": admin} if admin else {})
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv3.server_port}/api/wishes",
+                                                          json.dumps(body).encode(), h, method="POST"))
+        return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, None
+assert wishes3({"approve": wid})[0] == 403 and wishes3({"approve": wid}, admin="gjett")[0] == 403
+code, d = wishes3({"approve": wid}, admin="hemmelig")
+assert code == 200 and d["pending"] == [] and "Vits" in [p["name"] for p in presets.items()] and closed == [(7, True)]
+assert json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/wishes").read())["admin"]  # its own keyboard
+fake_design("x")  # closed as "not planned" on GitHub: turned down here too
+presets.set_issue(presets.last["id"], 8)
+issues.verdict = lambda n: {8: "rejected"}.get(n)
+web.sync_wishes()
+assert presets.items(pending=True) == []
+agent.design_preset = real_design
+del os.environ["WEATHERBOY_ADMIN"]
+# the phone base's settings card: the server talks to the board over the cable (here a fake one that speaks
+# esp8266-phone-hook's protocol, LCD frames and all), and only the admin may change what it keeps in flash
+import phone, queue as _queue
+class FakeBoard(phone.SerialLink):
+    def __init__(self):
+        self.where, self.inbox, self.out = "serial /dev/fake", _queue.Queue(), bytearray()
+        self.cfg = {"host": "172.20.10.5", "port": 5000, "ssid": "bastiphone", "pass": "set", "wifi": "connected",
+                    "ip": "192.168.0.55", "rssi": -61, "hook": 0}
+        self._write = threading.Lock()
+        self.inbox.put(b"HOOK 1")
+    def lines(self):
+        while True:
+            yield self.inbox.get()
+    def send_frame(self, data):
+        self.out += b"L" + len(data).to_bytes(2, "little") + data
+    def send_line(self, text):
+        self.out += text.encode() + b"\n"
+        while self.out:  # the firmware's parser: skip frames, answer whole lines
+            if self.out[:1] == b"L":
+                n = int.from_bytes(self.out[1:3], "little")
+                del self.out[:3 + n]
+                continue
+            line, _, rest = bytes(self.out).partition(b"\n")
+            self.out = bytearray(rest)
+            self.inbox.put(self.answer(line.decode()))
+    def answer(self, cmd):
+        if cmd == "GET":
+            return b"CFG " + json.dumps(self.cfg).encode()
+        if cmd.startswith("SET "):
+            k, _, v = cmd[4:].partition("=")
+            if k == "port" and not 1 <= int(v) <= 65535:
+                return b"ERR port must be 1-65535"
+            self.cfg[k] = "set" if k == "pass" else int(v) if k == "port" else v
+            return b"OK " + k.encode()
+        if cmd == "TEST":
+            return b"OK reached %s:%d" % (self.cfg["host"].encode(), self.cfg["port"])
+        return b"OK restarting"
+board = FakeBoard()
+phone._shared = phone.Phone(board)
+board.send_frame(bytes(1024))  # an LCD frame from the voice loop in between: commands still parse
+_time.sleep(0.1)
+os.environ["WEATHERBOY_ADMIN"] = "hemmelig"
+def esp3(body=None, admin=None):
+    h = {"Content-Type": "application/json", "CF-Connecting-IP": "84.214.212.9"} | ({"X-Admin": admin} if admin else {})
+    req = urllib.request.Request(f"http://127.0.0.1:{srv3.server_port}/api/esp", json.dumps(body).encode() if body else None,
+                                 h, method="POST" if body else "GET")
+    try:
+        r = urllib.request.urlopen(req)
+        return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+code, d = esp3()
+assert code == 200 and d["found"] and d["lifted"] and d["config"]["host"] == "172.20.10.5" and d["where"] == "serial /dev/fake"
+assert esp3({"set": {"host": "192.168.0.42"}})[0] == 403  # anyone may look, only the admin may change it
+code, d = esp3({"set": {"host": "192.168.0.42", "port": "5001", "ssid": "Telia_x", "pass": ""}}, admin="hemmelig")
+assert code == 200 and d["config"]["host"] == "192.168.0.42" and d["config"]["port"] == 5001 and d["config"]["ssid"] == "Telia_x"
+code, d = esp3({"set": {"port": "99999"}}, admin="hemmelig")
+assert code == 500 and "1-65535" in d["error"]  # the board's own reason comes back
+code, d = esp3({"test": True}, admin="hemmelig")
+assert d["ok"] and d["said"] == "reached 192.168.0.42:5001"
+try:
+    phone._shared.set(host="a\nRESTART")
+    raise AssertionError("smuggled a second command in")
+except ValueError:
+    pass
+silent = phone.Phone(FakeBoard())
+silent.link.answer = lambda cmd: None  # the old sketch: hook lines, no answers
+silent.link.send_line = lambda text: None
+try:
+    silent.ask("GET", timeout=0.2)
+    raise AssertionError("an old firmware answered")
+except TimeoutError as e:
+    assert "fastvaren" in str(e)
+phone._shared = None
+del os.environ["WEATHERBOY_ADMIN"]
+srv3.shutdown()
+agent.ask = real_ask
+# a visitor's key bills them: their client, and none of it in the flat's spending
+assert agent.client_for(None) is agent.client and agent.client_for("sk-ant-x").api_key == "sk-ant-x"
+before, agent.history = agent.spent, [{"role": "user", "content": "x"}]
+agent.last_model, agent.last_ask = "claude-haiku-4-5", _time.time()
+local.SERVERS = ["http://127.0.0.1:1/v1"]
+try:
+    agent.ask("hei", use="local")
+except RuntimeError:
+    pass
+assert agent.history[:1] != [{"role": "user", "content": "x"}] and agent.spent == before  # another model: fresh
 
 # web tools for the local model: DuckDuckGo's results parsed; fetching only reaches public addresses
 import websearch
