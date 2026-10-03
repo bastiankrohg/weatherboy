@@ -3,6 +3,7 @@ HTML results by default, or a self-hosted SearXNG when WEATHERBOY_SEARXNG_URL is
 
 Fetching is limited to public internet addresses: the model picks the URLs, and a web page can try to steer it,
 so nothing it reads may send it to the printer, the router or anything else on the home network."""
+import envfile  # noqa: F401 - .env loaded before the settings below are read
 import ipaddress
 import os
 import re

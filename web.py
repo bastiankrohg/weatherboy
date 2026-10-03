@@ -8,6 +8,7 @@ is off, busy or out of paper doesn't lose the job: it lands in printq's queue an
 reply says so in X-Queued.
 ponytail: no login. Anyone on the LAN can print and spend API credit. Add a shared password if the flat grows.
 """
+import envfile  # noqa: F401 - .env loaded before the settings below are read
 import hmac
 import io
 import json

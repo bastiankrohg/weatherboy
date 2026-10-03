@@ -1,4 +1,5 @@
 """The recipe collection: markdown files in their own git repo, which the agent can list, read and add drafts to."""
+import envfile  # noqa: F401 - .env loaded before the settings below are read
 import os
 import re
 from pathlib import Path

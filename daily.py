@@ -1,5 +1,6 @@
 """The daily prints: art and a word of the day, at a set time, switched on and off from the web page.
 The due-or-not rule is due(); the loop in run() retries each minute until the printer takes it."""
+import envfile  # noqa: F401 - .env loaded before the settings below are read
 import json
 import os
 import threading

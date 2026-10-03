@@ -249,6 +249,13 @@ env = Path(tempfile.mkdtemp()) / ".env"
 env.write_text('# comment\nWB_TEST_A = "one"\nWB_TEST_B=two=2\nnot a setting\n', encoding="utf-8")
 os.environ["WB_TEST_B"] = "from the shell"
 agent.load_env(env)
+# every module that reads a setting as it loads imports envfile first, so .env counts whatever loads first
+import re as _re
+for _f in Path(__file__).parent.glob("*.py"):
+    _src = _f.read_text(encoding="utf-8")
+    if _f.name not in ("envfile.py", "test_printer.py", "test_web_ui.py") and _re.search(r"^\S.*os\.environ", _src, _re.M):
+        first = _re.search(r"^(?:import|from) (\w+)", _src, _re.M)[1]
+        assert first == "envfile", f"{_f.name} reads the environment at import but imports {first} before envfile"
 assert os.environ["WB_TEST_A"] == "one" and os.environ["WB_TEST_B"] == "from the shell"
 if not (agent.client.api_key or agent.client.auth_token):
     try:

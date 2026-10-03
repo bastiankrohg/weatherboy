@@ -1,6 +1,7 @@
 """Free answers from a model on our own machines: Ollama on the work desktop over Tailscale, or on this machine.
 Anything that speaks the OpenAI chat API with tool calls works the same (llama.cpp's server, LM Studio, vLLM,
 an agent with an OpenAI-compatible endpoint), so this is plain HTTP rather than one vendor's SDK."""
+import envfile  # noqa: F401 - .env loaded before the settings below are read
 import json
 import os
 import re

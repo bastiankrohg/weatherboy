@@ -2,6 +2,7 @@
 pipeline posting transcripts to the web server (/api/voice). Keywords make a card without a model, the password
 starts a call, nlp reads the time, place and stop out of a longer sentence, and only what's left goes to the
 model. route() only decides and renders; the caller prints, plays tones or speaks."""
+import envfile  # noqa: F401 - .env loaded before the settings below are read
 import os
 import re
 from difflib import get_close_matches

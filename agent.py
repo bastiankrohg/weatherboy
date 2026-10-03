@@ -1,4 +1,5 @@
 """Claude with live-data tools. ask(question) -> printable text; ask(question, voice=True) -> speakable text."""
+import envfile  # noqa: F401 - .env first: this module and the ones below read settings as they load
 import math
 import os
 import threading
@@ -15,17 +16,9 @@ import presets
 import shoplist
 import websearch
 
-
-def load_env(path=Path(__file__).with_name(".env")):
-    """KEY=value lines from the git-ignored .env into os.environ; real environment variables win."""
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            key, sep, value = line.partition("=")
-            if sep and not key.lstrip().startswith("#"):
-                os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+load_env = envfile.load_env
 
 
-load_env()  # before anything reads the environment below
 
 PLACE = os.environ.get("WEATHERBOY_PLACE", "Oslo")
 LAT, LON = (float(v) for v in os.environ.get("WEATHERBOY_LATLON", "59.9139,10.7522").split(","))
