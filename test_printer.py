@@ -762,6 +762,19 @@ try:
     raise AssertionError("an old firmware answered")
 except TimeoutError as e:
     assert "fastvaren" in str(e)
+class FakeSerial:  # the real SerialLink reading a long settings reply between hook lines
+    def __init__(self, data):
+        self.data = data
+    def read_until(self, end, size):
+        i = self.data.find(end)
+        n = min(size, len(self.data) if i < 0 else i + 1)
+        chunk, self.data = self.data[:n], self.data[n:]
+        return chunk
+cfg_line = b"CFG " + json.dumps(board.cfg | {"ssid": "x" * 32}).encode() + b"\n"
+link = phone.SerialLink.__new__(phone.SerialLink)
+link.ser = FakeSerial(b"HOOK 1\n" + cfg_line + b"HOOK 1\n")
+got = [next(link.lines()) for _ in range(3)]
+assert len(cfg_line) > 150 and got == [b"HOOK 1", cfg_line.strip(), b"HOOK 1"]  # whole lines, never "OK 1"
 phone._shared.screen("think")  # the board's own "Tenker" screen, until done
 assert board.screen == "think"
 phone._shared.screen("done")

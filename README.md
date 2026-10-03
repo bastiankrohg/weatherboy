@@ -265,25 +265,31 @@ All reserved on the router (http://192.168.0.1), so they stay put:
 | Receipt printer (Star TSP143IIILAN), port 9100 | 192.168.0.108 |
 | Phone base (ESP8266) on WiFi; it reports hook changes to the server on port 5000 | 192.168.0.114 |
 
-## Running on the MacBook Pro (2012, macOS 10.15)
+## Running on the MacBook Pro (2012, macOS 11.7)
 
-The server runs there; the handset's speech needs a newer machine (onnxruntime has no Intel-Mac builds, PyAV needs macOS 11), which can send transcripts to `/api/voice` instead.
+The server runs there (192.168.0.220), with the phone base on its USB. The handset's speech needs a newer machine (onnxruntime has no Intel-Mac builds), which can send transcripts to `/api/voice` instead. You can reach it with `ssh Bastian@192.168.0.220` once Remote Login is on (System Preferences → Sharing).
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone git@github.com:bastiankrohg/weatherboy.git && cd weatherboy
 git clone git@github.com:bastiankrohg/recipes.git recipes
-uv sync                                   # server only
+uv sync --extra phone                     # the server, and the phone base on USB
 cp /path/to/.env .                        # ANTHROPIC_API_KEY, WEATHERBOY_PUBLIC_URL, WEATHERBOY_MODEL=local ...
 ```
 
-For the tunnel, install `cloudflared` (`brew install cloudflared`, or the `darwin-amd64` release), copy `~/.cloudflared/` from the Windows laptop (`cert.pem`, the tunnel's `<id>.json` and `config.yml`, with `credentials-file:` pointing at the new path), then:
+For the tunnel, copy `~/.cloudflared/` from the machine that ran it before: `cert.pem`, the tunnel's `<id>.json`, and `config.yml` with `credentials-file:` pointing at the new path. cloudflared itself: there's no Homebrew on macOS 11, and the newest releases are built for macOS 15 and won't start. **2025.8.1** is the newest that runs:
 
 ```sh
-uv run web.py --printer 192.168.0.108 --tunnel weatherboy
+curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/2025.8.1/cloudflared-darwin-amd64.tgz | tar xz -C ~/.local/bin
 ```
 
-`caffeinate -s` in front keeps the Mac from sleeping. Only one machine should run the tunnel at a time.
+Run it in `screen`, so it keeps going after you log out (`screen -r weatherboy` to look, Ctrl-A D to leave it). `caffeinate -s` keeps the Mac awake:
+
+```sh
+screen -dmS weatherboy zsh -lc 'cd ~/torggata/weatherboy && caffeinate -s uv run web.py --printer 192.168.0.108 --tunnel weatherboy 2>&1 | tee -a ~/weatherboy.log'
+```
+
+Only one machine should run the tunnel at a time.
 
 ## Setup
 

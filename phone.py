@@ -89,7 +89,9 @@ class SerialLink:
 
     def lines(self):
         while True:
-            raw = self.ser.read_until(b"\n", 64)  # vendor boot noise arrives first; Phone ignores it
+            # whole lines: the settings reply is ~200 bytes, and a line cut in two can turn "HOOK 1" into "OK 1".
+            # The cap only bounds the vendor boot noise that arrives first, without newlines; Phone ignores it.
+            raw = self.ser.read_until(b"\n", 1024)
             if raw:
                 yield raw.strip()
 
