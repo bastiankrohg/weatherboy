@@ -283,13 +283,35 @@ For the tunnel, copy `~/.cloudflared/` from the machine that ran it before: `cer
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/2025.8.1/cloudflared-darwin-amd64.tgz | tar xz -C ~/.local/bin
 ```
 
-Run it in `screen`, so it keeps going after you log out (`screen -r weatherboy` to look, Ctrl-A D to leave it). `caffeinate -s` keeps the Mac awake:
+The server and the tunnel run as two background services (LaunchAgents, in [deploy/macos](deploy/macos)). They start when you log in, and launchd starts them again if they stop. `caffeinate -is` keeps the Mac awake while the server runs, on battery too, but keep it on the charger:
 
 ```sh
-screen -dmS weatherboy zsh -lc 'cd ~/torggata/weatherboy && caffeinate -s uv run web.py --printer 192.168.0.108 --tunnel weatherboy 2>&1 | tee -a ~/weatherboy.log'
+cp deploy/macos/com.weatherboy.server.plist deploy/macos/com.weatherboy.tunnel.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.weatherboy.server.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.weatherboy.tunnel.plist
+launchctl kickstart -k gui/$(id -u)/com.weatherboy.server     # restart, e.g. after git pull
+tail -f ~/weatherboy.log ~/weatherboy-tunnel.log               # what they're doing
 ```
 
-Only one machine should run the tunnel at a time.
+The paths in them are this Mac's (`/Users/Bastian`). Restarting the server reopens the USB port, which resets the phone base; it's back on WiFi a few seconds later. Only one machine should run the tunnel at a time.
+
+**To keep it running across power cuts and restarts** (macOS asks for your password):
+
+```sh
+sudo pmset -a sleep 0 disksleep 0 autorestart 1 womp 1   # never sleep; power back on after a power cut
+```
+
+LaunchAgents only run while you're logged in. After a restart, either log in once, or turn on automatic login (System Preferences → Users & Groups → Login Options; FileVault must be off).
+
+### The local model, from the MacBook Air for now
+
+robotlab is only reachable over Tailscale, which needs macOS 12, so for now the old Mac asks Ollama on the MacBook Air. In the old Mac's `.env`:
+
+```
+WEATHERBOY_LOCAL_URLS=http://Bastians-macbook-air.local:11434/v1,http://192.168.0.6:11434/v1
+```
+
+On the Air, [deploy/macos/com.weatherboy.ollama.plist](deploy/macos/com.weatherboy.ollama.plist) runs the Ollama app's server as a background service, listening on the network (`OLLAMA_HOST=0.0.0.0`), with `qwen3:8b` pulled (`ollama pull qwen3:8b`). Ollama has no login of its own: on the home network that's fine, but on someone else's WiFi anyone there could use it. To keep the Air awake on the charger: System Settings → Battery → Options → "Prevent automatic sleeping on power adapter when the display is off". It still sleeps when the lid is closed.
 
 ## Setup
 

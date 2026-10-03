@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The Cloudflare tunnel to print.bastiankrohg.com: starts at login, and again if it stops.
+     Its own service, so restarting the server never leaves a second tunnel behind. Logs: ~/weatherboy-tunnel.log -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.weatherboy.tunnel</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/Bastian/.local/bin/cloudflared</string>
+		<string>tunnel</string>
+		<string>run</string>
+		<string>weatherboy</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/Bastian/weatherboy-tunnel.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/Bastian/weatherboy-tunnel.log</string>
+</dict>
+</plist>

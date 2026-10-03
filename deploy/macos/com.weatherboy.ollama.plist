@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Ollama for weatherboy: the local model, served to the old MacBook on the home network.
+     Starts at login and again if it stops. Remove with:
+     launchctl bootout gui/$(id -u)/com.weatherboy.ollama && rm ~/Library/LaunchAgents/com.weatherboy.ollama.plist -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.weatherboy.ollama</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/Ollama.app/Contents/Resources/ollama</string>
+		<string>serve</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>OLLAMA_HOST</key>
+		<string>0.0.0.0:11434</string>
+		<key>OLLAMA_KEEP_ALIVE</key>
+		<string>30m</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/bastiankrohg/Library/Logs/weatherboy-ollama.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/bastiankrohg/Library/Logs/weatherboy-ollama.log</string>
+</dict>
+</plist>
