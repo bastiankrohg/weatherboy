@@ -286,7 +286,7 @@ printf "\nno-autoupdate: true\n" >> ~/.cloudflared/config.yml
 
 **Turn off self-updating, as above.** By default cloudflared replaces itself every day with the newest release, which won't start on macOS 11: the tunnel then dies overnight. The service file and `web.py --tunnel` also pass `--no-autoupdate`.
 
-The server and the tunnel run as two background services (LaunchAgents, in [deploy/macos](deploy/macos)). They start when you log in, and launchd starts them again if they stop. `caffeinate -is` keeps the Mac awake while the server runs, on battery too, but keep it on the charger:
+The server and the tunnel run as two background services (LaunchAgents, in [deploy/macos](deploy/macos)). The server is `main.py --phone --mic USB --speaker USB`: the web page and the handset in one process, so they share the phone base's cable, with the handset's sound through the USB sound card. If the sound or the speech models can't start, the page keeps running and the handset is tried again every minute. They start when you log in, and launchd starts them again if they stop. `caffeinate -is` keeps the Mac awake while the server runs, on battery too, but keep it on the charger:
 
 ```sh
 cp deploy/macos/com.weatherboy.server.plist deploy/macos/com.weatherboy.tunnel.plist ~/Library/LaunchAgents/
@@ -308,7 +308,7 @@ LaunchAgents only run while you're logged in. After a restart, either log in onc
 
 ### Deploying: push, and the old Mac pulls
 
-[deploy/macos/update.sh](deploy/macos/update.sh) runs every 2 minutes on the old Mac (`com.weatherboy.update`): if `main` on GitHub has moved, it pulls, syncs the dependencies and restarts the server. So develop and test on another machine, push, and it's live a couple of minutes later; `~/weatherboy-update.log` says when. Nothing has to reach into the old Mac for this. It only fast-forwards: if something was changed on the old Mac itself, it leaves it alone and says so in the log.
+[deploy/macos/update.sh](deploy/macos/update.sh) runs every 2 minutes on the old Mac (`com.weatherboy.update`): if `main` on GitHub has moved, it pulls, syncs the dependencies (voice and phone) and restarts the server. If a service file in `deploy/macos` changed, it installs that and reloads the service, so changing how the server starts is a push too. `/api/version` says which commit a server runs. So develop and test on another machine, push, and it's live a couple of minutes later; `~/weatherboy-update.log` says when. Nothing has to reach into the old Mac for this. It only fast-forwards: if something was changed on the old Mac itself, it leaves it alone and says so in the log.
 
 ```sh
 cp deploy/macos/com.weatherboy.update.plist ~/Library/LaunchAgents/

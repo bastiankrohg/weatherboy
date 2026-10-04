@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- weatherboy's web server (printer, phone base on USB): starts at login, and again if it stops.
+<!-- weatherboy: the web page and the handset in one process (main.py --phone; they share the phone base's
+     cable), sound through the USB card. Starts at login, and again if it stops.
      caffeinate -is keeps the Mac awake while it runs, also on battery. Logs: ~/weatherboy.log
      Restart: launchctl kickstart -k gui/$(id -u)/com.weatherboy.server -->
 <plist version="1.0">
@@ -15,9 +16,14 @@
 		<string>-is</string>
 		<string>/Users/Bastian/.local/bin/uv</string>
 		<string>run</string>
-		<string>web.py</string>
+		<string>main.py</string>
+		<string>--phone</string>
 		<string>--printer</string>
 		<string>192.168.0.108</string>
+		<string>--mic</string>
+		<string>USB</string>
+		<string>--speaker</string>
+		<string>USB</string>
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>

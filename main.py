@@ -53,6 +53,18 @@ def main():
         print(web.banner())
         if a.gui:
             orb.open_window(f"http://localhost:{a.web}/orb")
+    while True:
+        try:
+            return run_voice(a, password)  # returns on Ctrl-C or the end of typed input
+        except Exception as e:  # noqa: BLE001 - no sound card, a speech model that won't download...: the page stays up
+            print(f"voice: {e!r} - trying again in 60 s; the web page keeps running")
+            orb.set("error", label="Stemmen virker ikke nå")
+            time.sleep(60)
+
+
+def run_voice(a, password):
+    """The handset: listen while it's lifted, answer on paper or out loud. Raises if the sound or the speech
+    models can't start, which main() turns into a retry rather than taking the web page down with it."""
     import speak
     phone = None
     if a.phone:
@@ -164,6 +176,7 @@ def main():
             orb.set("error")
             show("Feil", repr(e))
             tone(speak.BUSY)
+            time.sleep(2)  # an error that repeats (the sound card unplugged) mustn't spin the loop
 
 
 if __name__ == "__main__":
