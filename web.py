@@ -194,7 +194,10 @@ def transcribe(data):
     """Audio as the browser recorded it (webm/opus, mp4, wav...) -> {"text", "lang"}."""
     if STT is None:
         raise NoSpeech("Talegjenkjenningen er ikke i gang her: den starter med røret (main.py).")
-    audio = decode_audio(data)
+    try:
+        audio = decode_audio(data)
+    except Exception as e:  # noqa: BLE001 - PyAV raises its own kinds for anything it can't read
+        raise ValueError(f"Kunne ikke lese lydopptaket ({type(e).__name__}). Prøv igjen.") from None
     if len(audio) < 16000 * 0.3:
         return {"text": "", "lang": None}
     with _stt_lock:

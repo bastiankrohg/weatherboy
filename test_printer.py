@@ -999,6 +999,8 @@ web.STT = lambda audio: heard_len.append(len(audio)) or ("hvordan blir været", 
 code, d = listen3(clip.getvalue())
 assert code == 200 and d == {"text": "hvordan blir været", "lang": "no"} and 15000 < heard_len[0] < 17000  # 1 s at 16 kHz
 assert orb.log()[-1]["text"] == "hvordan blir været"  # in the voice's transcript too
+code, d = listen3(b"not audio at all")
+assert code == 500 and "Kunne ikke lese lydopptaket" in d["error"]  # in words, not PyAV's
 web.STT = None
 phone._shared.screen("think")  # the board's own "Tenker" screen, until done
 assert board.screen == "think"
