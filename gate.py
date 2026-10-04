@@ -1,6 +1,6 @@
 """A gate in front of Ollama, so it can be published through a Cloudflare tunnel without publishing Ollama.
 Only what local.py uses gets through - GET /v1/models and POST /v1/chat/completions - only with the key, and only
-for weatherboy's model. Pulling, deleting or loading other models, and Ollama's own API, never reach it.
+for weatherboy's model. Streamed answers are passed on piece by piece, so a long one doesn't time out the tunnel. Pulling, deleting or loading other models, and Ollama's own API, never reach it.
 
     python gate.py      127.0.0.1:11435 -> Ollama on 127.0.0.1:11434. Needs WEATHERBOY_LOCAL_KEY in .env;
                         without one it turns everything away.
@@ -51,13 +51,25 @@ class Gate(BaseHTTPRequestHandler):
                 return self.refuse(400, "not JSON")
             if d.get("model") not in MODELS:
                 return self.refuse(403, "only " + ", ".join(sorted(MODELS)))
-            d["stream"] = False  # one answer per request: the tunnel and local.py both want that
+            stream = bool(d.get("stream"))
             body = json.dumps(d).encode()
+        else:
+            stream = False
         req = urllib.request.Request(OLLAMA + path, data=body, method=method,
                                      headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=600) as r:
-                self.reply(r.status, r.read(), r.headers.get("Content-Type", "application/json"))
+                if not stream:
+                    return self.reply(r.status, r.read(), r.headers.get("Content-Type", "application/json"))
+                # streamed: each piece goes on as Ollama writes it, which keeps the tunnel from timing out
+                self.send_response(r.status)
+                self.send_header("Content-Type", r.headers.get("Content-Type", "text/event-stream"))
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                while chunk := r.read1(65536):
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                self.close_connection = True
         except urllib.error.HTTPError as e:
             self.reply(e.code, e.read(), e.headers.get("Content-Type", "application/json"))
         except OSError:

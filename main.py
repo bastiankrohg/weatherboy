@@ -186,6 +186,7 @@ def run_voice(a, password):
             break
         except Exception as e:  # keep the handset alive; one bad API call shouldn't kill the loop
             print(f"error: {e!r}")
+            orb.note(f"feil: {e}")  # in the transcript too: a question that fails mustn't just vanish
             screen("done")
             orb.set("error")
             show("Feil", repr(e))

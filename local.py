@@ -38,6 +38,43 @@ def server():
     return None
 
 
+def _turn(url, body, deadline):
+    """One model turn, streamed: the answer arrives in pieces as it's written. A tunnel gives up on a request
+    that stays silent for 100 s (Cloudflare's limit), and a long answer like a recipe takes longer than that
+    to write; a stream keeps talking. -> the whole message, tool calls and all, as the non-streamed API gives it."""
+    content, calls = [], {}
+    gap = 180 if not deadline else max(1.0, min(180, deadline - time.monotonic()))  # the longest wait for a piece
+    try:
+        with requests.post(url.rstrip("/") + "/chat/completions", headers=headers(), json=body | {"stream": True},
+                           stream=True, timeout=(10, gap)) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if deadline and time.monotonic() > deadline:
+                    raise TimeoutError(progress.TOO_SLOW)
+                if not line.startswith(b"data:"):
+                    continue
+                data = line[5:].strip()
+                if data == b"[DONE]":
+                    break
+                delta = (json.loads(data).get("choices") or [{}])[0].get("delta") or {}
+                content.append(delta.get("content") or "")
+                for tc in delta.get("tool_calls") or []:  # tool calls may come in pieces too, by index
+                    c = calls.setdefault(tc.get("index", len(calls)),
+                                         {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                    c["id"] = tc.get("id") or c["id"]
+                    f = tc.get("function") or {}
+                    c["function"]["name"] += f.get("name") or ""
+                    args = f.get("arguments")
+                    c["function"]["arguments"] = (json.dumps(args) if isinstance(args, dict)
+                                                  else c["function"]["arguments"] + (args or ""))
+    except requests.Timeout:
+        raise TimeoutError(progress.TOO_SLOW) from None
+    msg = {"role": "assistant", "content": "".join(content)}
+    if calls:
+        msg["tool_calls"] = [calls[i] for i in sorted(calls)]
+    return msg
+
+
 def chat(system, messages, tools, model=MODEL, deadline=None):
     """The tool loop against an OpenAI-compatible endpoint. `messages` (role/content dicts) is appended to;
     `tools` are the same function tools Claude gets (name, description, input_schema, call)."""
@@ -49,16 +86,10 @@ def chat(system, messages, tools, model=MODEL, deadline=None):
                                                "parameters": t.input_schema}} for t in tools]
     by_name = {t.name: t for t in tools}
     for _ in range(8):  # a few rounds of tool calls, then it has to answer
-        left = deadline - time.monotonic() if deadline else 300
-        if left <= 0:
+        if deadline and time.monotonic() > deadline:
             raise TimeoutError(progress.TOO_SLOW)
-        try:
-            r = requests.post(url.rstrip("/") + "/chat/completions", headers=headers(), timeout=left, json={
-                "model": model, "tools": specs, "messages": [{"role": "system", "content": system + LOCAL}] + messages})
-        except requests.Timeout:
-            raise TimeoutError(progress.TOO_SLOW) from None
-        r.raise_for_status()
-        msg = r.json()["choices"][0]["message"]
+        msg = _turn(url, {"model": model, "tools": specs,
+                          "messages": [{"role": "system", "content": system + LOCAL}] + messages}, deadline)
         messages.append({k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")})
         calls = msg.get("tool_calls") or []
         if not calls:  # reasoning models (qwen3 …) may wrap their thinking in <think> tags: never print that

@@ -516,8 +516,23 @@ class FakeOllama(BaseHTTPRequestHandler):
         msg = ({"role": "assistant", "content": "tema: cooking\nDere har: " + last["content"]} if last["role"] == "tool"
                else {"role": "assistant", "content": "", "tool_calls": [
                    {"id": "c1", "type": "function", "function": {"name": "list_recipes", "arguments": "{}"}}]})
-        body = json.dumps({"choices": [{"message": msg}]}).encode()
-        self.send_response(200); self.end_headers(); self.wfile.write(body)
+        if not req.get("stream"):
+            body = json.dumps({"choices": [{"message": msg}]}).encode()
+            self.send_response(200); self.end_headers(); self.wfile.write(body)
+            return
+        # streamed, the way Ollama does it: the text in pieces, a tool call's arguments in pieces too
+        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+        if msg.get("tool_calls"):
+            c = msg["tool_calls"][0]
+            pieces = [{"tool_calls": [{"index": 0, "id": c["id"], "type": "function",
+                                       "function": {"name": c["function"]["name"], "arguments": "{"}}]},
+                      {"tool_calls": [{"index": 0, "function": {"arguments": "}"}}]}]
+        else:
+            text = msg["content"]
+            pieces = [{"role": "assistant", "content": text[:10]}, {"content": text[10:]}]
+        for d in pieces:
+            self.wfile.write(b"data: " + json.dumps({"choices": [{"delta": d}]}).encode() + b"\n\n"); self.wfile.flush()
+        self.wfile.write(b"data: [DONE]\n\n")
 fake = ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
 threading.Thread(target=fake.serve_forever, daemon=True).start()
 local.SERVERS = ["http://127.0.0.1:1/v1", f"http://127.0.0.1:{fake.server_port}/v1"]  # first one is down
@@ -593,10 +608,9 @@ class SlowOllama(BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers["Content-Length"]))  # read it all, or closing the socket resets it
         _time.sleep(1.5)
-        body = b'{"choices": [{"message": {"content": "sent"}}]}'
         try:
-            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
-            self.wfile.write(body)
+            self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+            self.wfile.write(b'data: {"choices": [{"delta": {"content": "sent"}}]}\n\ndata: [DONE]\n\n')
         except OSError:  # the client gave up first: that's the point of the test
             pass
 slow = ThreadingHTTPServer(("127.0.0.1", 0), SlowOllama)
