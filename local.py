@@ -5,8 +5,11 @@ import envfile  # noqa: F401 - .env loaded before the settings below are read
 import json
 import os
 import re
+import time
 
 import requests
+
+import progress
 
 # tried in order, per question: the desktop may be off or asleep. Each is a base URL ending in /v1.
 SERVERS = [u.strip() for u in os.environ.get("WEATHERBOY_LOCAL_URLS",
@@ -21,7 +24,7 @@ def headers():
 LOCAL = ("\nYou run on a small local model, so don't trust your memory for facts, news, results or anything "
          "that changes: call web_search first (and web_fetch to read a result), then answer from what you found. "
          "Never write that you will search; just call the tool. Keep tool calls few. Write correct, natural "
-         "Norwegian (or the user's language) and nothing else; plain words over clever ones.")
+         "language, in the language you were told to reply in, and nothing else; plain words over clever ones.")
 
 
 def server():
@@ -35,7 +38,7 @@ def server():
     return None
 
 
-def chat(system, messages, tools, model=MODEL):
+def chat(system, messages, tools, model=MODEL, deadline=None):
     """The tool loop against an OpenAI-compatible endpoint. `messages` (role/content dicts) is appended to;
     `tools` are the same function tools Claude gets (name, description, input_schema, call)."""
     url = server()
@@ -46,8 +49,14 @@ def chat(system, messages, tools, model=MODEL):
                                                "parameters": t.input_schema}} for t in tools]
     by_name = {t.name: t for t in tools}
     for _ in range(8):  # a few rounds of tool calls, then it has to answer
-        r = requests.post(url.rstrip("/") + "/chat/completions", headers=headers(), timeout=300, json={
-            "model": model, "tools": specs, "messages": [{"role": "system", "content": system + LOCAL}] + messages})
+        left = deadline - time.monotonic() if deadline else 300
+        if left <= 0:
+            raise TimeoutError(progress.TOO_SLOW)
+        try:
+            r = requests.post(url.rstrip("/") + "/chat/completions", headers=headers(), timeout=left, json={
+                "model": model, "tools": specs, "messages": [{"role": "system", "content": system + LOCAL}] + messages})
+        except requests.Timeout:
+            raise TimeoutError(progress.TOO_SLOW) from None
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]
         messages.append({k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")})
@@ -58,8 +67,10 @@ def chat(system, messages, tools, model=MODEL):
             try:
                 args = c["function"]["arguments"]
                 args = args if isinstance(args, dict) else json.loads(args or "{}")
+                progress.step(progress.describe(c["function"]["name"], args))
                 result = by_name[c["function"]["name"]].call(args)
             except Exception as e:  # a wrong tool name or bad arguments: tell the model, let it try again
                 result = f"Error: {type(e).__name__}: {e}"
             messages.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": str(result)})
+        progress.step("Venter på modellen")
     return "Beklager, jeg kom ikke i mål med det."

@@ -676,7 +676,13 @@ function keyUI(asked = false) {
 }
 async function aiPost(url, body) {  // -> the reply; a 401 with need_key opens the key field
   const r = await fetch(url, { method: "POST", body: JSON.stringify({ ...body, model: $("#model").value }), headers: aiHeaders() });
-  const d = await r.json();
+  let d;
+  try { d = await r.json(); }
+  catch {  // not our JSON: something on the way (the tunnel, a proxy) answered instead of the server
+    throw new Error(r.status === 524 || r.status === 504 ? "Svaret tok for lang tid, og forbindelsen ga opp. Prøv igjen."
+                    : r.status >= 500 ? `Serveren svarer ikke ordentlig nå (HTTP ${r.status}). Prøv igjen om litt.`
+                    : `Uventet svar fra serveren (HTTP ${r.status}).`);
+  }
   if (!r.ok) {
     if (d.need_key) { if (r.status === 401 && apiKey() && /godtatt/.test(d.error)) localStorage.removeItem("apikey"); keyUI(true); }
     throw new Error(d.error);
@@ -694,10 +700,32 @@ $("#keyform").onsubmit = ev => {
 };
 $("#forgetkey").onclick = () => { localStorage.removeItem("apikey"); keyUI(); say("Nøkkelen er glemt."); };
 
+// While a question is out: a timer, and what the server says it's doing ("Søker: …"), so slow isn't mistaken for stuck
+function watch(line) {
+  const rid = (crypto.randomUUID && crypto.randomUUID()) || Math.random().toString(36).slice(2) + Date.now();
+  const t0 = performance.now();
+  let last = "", asking = false;
+  const tick = async () => {
+    const s = Math.round((performance.now() - t0) / 1000);
+    line(`Tenker … ${s} s` + (last ? ` · ${last}` : ""));
+    if (asking) return;
+    asking = true;
+    try {
+      const p = await (await fetch("/api/progress?id=" + encodeURIComponent(rid))).json();
+      if (p.steps.length) last = p.steps.at(-1).text;
+    } catch {}
+    asking = false;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+  return { rid, stop: () => clearInterval(timer) };
+}
+
 async function askFlow(label, url, body) {
   const entry = logEntry(label);
+  const w = watch(text => entry.querySelector(".a").textContent = text);
   try {
-    const d = await aiPost(url, body);
+    const d = await aiPost(url, { ...body, rid: w.rid }).finally(w.stop);
     entry.querySelector(".a").textContent = d.answer;
     entry.append(Object.assign(document.createElement("div"), { className: "cost", textContent: `≈ $${d.cost.toFixed(4)} · ${d.model}` }));
     showSpent(d.spent);
@@ -837,7 +865,8 @@ $("#wish").onsubmit = async ev => {
   if (!text) return;
   btn.disabled = true; btn.textContent = "Lager …"; msg.textContent = "";
   try {
-    const d = await aiPost("/api/wish", { text });
+    const w = watch(text => { msg.textContent = text; });
+    const d = await aiPost("/api/wish", { text, rid: w.rid }).finally(w.stop);
     showSpent(d.spent);
     msg.textContent = (d.preset ? `«${d.preset.name}» venter på godkjenning fra admin. ` : "") + d.reply + ` (≈ $${d.cost.toFixed(4)})`;
     if (d.preset) { $("#wishtext").value = ""; await loadWishes(); }

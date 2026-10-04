@@ -556,6 +556,60 @@ assert gate_call("POST", "/v1/chat/completions", {"model": "llama3:70b", "messag
 gate.KEY = ""
 assert gate_call("GET", "/v1/models") == 401  # no key set up on the gate: nobody gets in
 gated.shutdown()
+
+# the answer comes back in the question's language: told to the model in so many words
+for q, lang in [("How is the weather tomorrow?", "English"), ("Hvordan blir været i morgen?", "Norwegian"),
+                ("Hvordan bliver vejret i morgen?", "Danish"), ("Hur blir vädret imorgon?", "Swedish"),
+                ("Wie wird das Wetter morgen?", "German"), ("내일 날씨 어때?", "Korean"), ("hei", None)]:
+    assert agent.language(q) == lang, (q, agent.language(q))
+assert "write your whole reply in English" in agent.reply_in("Do we have a recipe for fish soup?")
+assert "same language" in agent.reply_in("ok")
+seen = []
+real_chat, local.chat = local.chat, lambda system, messages, tools, deadline=None: seen.append(system) or "Yes."
+agent.set_model("local")
+agent.ask("Which recipes do we have?")
+assert seen[-1].endswith(agent.reply_in("Which recipes do we have?")) and "in English" in seen[-1]
+local.chat = real_chat
+
+# what a question is doing, for the page: its steps under the id the page sent, tools described in words
+local.SERVERS, local.KEY = [f"http://127.0.0.1:{fake.server_port}/v1"], ""
+import progress
+progress.start("q1")
+agent.ask("Hvilke oppskrifter har vi?")
+progress.finish()
+steps = [s["text"] for s in progress.get("q1")["steps"]]
+assert steps[0].startswith("Spør Lokal") and "Ser i oppskriftene" in steps and progress.get("q1")["done"], steps
+assert progress.get("nobody") == {"steps": [], "elapsed": 0, "done": False}
+progress.step("nobody is watching")  # outside a question: a no-op, not an error
+assert progress.describe("web_fetch", {"url": "https://www.yr.no/nb"}) == "Leser www.yr.no"
+assert progress.describe("web_search", {"query": "været i Bergen"}) == "Søker: været i Bergen"
+
+# a model that takes too long: given up on, in plain words, instead of waiting until something else gives up
+class SlowOllama(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b'{"data": []}')
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))  # read it all, or closing the socket resets it
+        _time.sleep(1.5)
+        body = b'{"choices": [{"message": {"content": "sent"}}]}'
+        try:
+            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
+            self.wfile.write(body)
+        except OSError:  # the client gave up first: that's the point of the test
+            pass
+slow = ThreadingHTTPServer(("127.0.0.1", 0), SlowOllama)
+threading.Thread(target=slow.serve_forever, daemon=True).start()
+local.SERVERS = [f"http://127.0.0.1:{slow.server_port}/v1"]
+try:
+    agent.ask("hei", deadline=_time.monotonic() + 0.5)
+    raise AssertionError("waited past the deadline")
+except TimeoutError as e:
+    assert str(e) == progress.TOO_SLOW
+assert agent.ask("hei", deadline=_time.monotonic() + 5)[0] == "sent"  # in time: answered
+slow.shutdown()
+agent.set_model("claude-haiku-4-5")
 local.KEY = ""
 agent.set_model("claude-haiku-4-5")
 fake.shutdown()
@@ -658,7 +712,7 @@ agent.ask = real_ask
 # the question box: rules first (a receipt, no model), then the model the device picked. Through the tunnel,
 # Claude only runs on the visitor's own key, and the server's model is the flat's to change, not theirs
 calls_made = []
-agent.ask = lambda q, voice=False, use=None, api_key=None: calls_made.append((q, use, api_key)) or ("tema: idea\nJa.", 0.0)
+agent.ask = lambda q, voice=False, use=None, api_key=None, deadline=None: calls_made.append((q, use, api_key)) or ("tema: idea\nJa.", 0.0)
 srv3 = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
 threading.Thread(target=srv3.serve_forever, daemon=True).start()
 home._home.update(v4=ipaddress.ip_address("84.214.212.9"), v6=None, at=_time.time())
@@ -774,6 +828,21 @@ def esp3(body=None, admin=None):
         return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
+# the page's side of it: the steps under the id it sent, and a slow model as a 504 that says so
+def ask_watched(q, deadline=None, **kw):
+    progress.step("Søker: noe")
+    return "tema: idea\nJa.", 0.0
+agent.ask = ask_watched
+code, _, out = ask3("/api/ask", {"q": "hei", "model": "local", "rid": "side-1"})
+p = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/progress?id=side-1").read())
+assert code == 200 and p["done"] and [s["text"] for s in p["steps"]] == ["Søker: noe"]
+def too_slow(q, deadline=None, **kw):
+    assert deadline and deadline - _time.monotonic() <= progress.LIMIT_S
+    raise TimeoutError(progress.TOO_SLOW)
+agent.ask = too_slow
+code, _, out = ask3("/api/ask", {"q": "hei", "model": "local"})
+assert code == 504 and json.loads(out) == {"error": progress.TOO_SLOW, "timeout": True}
+agent.ask = lambda q, voice=False, use=None, api_key=None, deadline=None: calls_made.append((q, use, api_key)) or ("tema: idea\nJa.", 0.0)
 code, d = esp3()
 assert code == 200 and d["found"] and d["lifted"] and d["config"]["host"] == "172.20.10.5" and d["where"] == "serial /dev/fake"
 assert esp3({"set": {"host": "192.168.0.42"}})[0] == 403  # anyone may look, only the admin may change it
@@ -818,7 +887,9 @@ try:
     raise AssertionError("sent an unknown screen state")
 except ValueError:
     pass
-phone.Phone(phone.UdpLink.__new__(phone.UdpLink)).screen("think")  # an ESP32 on WiFi: nothing to draw, no error
+wifi_link = phone.UdpLink.__new__(phone.UdpLink)
+wifi_link.lines = lambda: iter(())  # nothing to hear: this is only about drawing
+phone.Phone(wifi_link).screen("think")  # an ESP32 on WiFi: nothing to draw, no error
 phone._shared = None
 del os.environ["WEATHERBOY_ADMIN"]
 srv3.shutdown()

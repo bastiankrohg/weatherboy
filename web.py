@@ -37,6 +37,7 @@ import orb
 import layout
 import local
 import presets
+import progress
 import printer
 import printq
 import router
@@ -149,6 +150,16 @@ def copies(q):
 LABELS = {"weather": "vær", "departures": "avganger", "flights": "fly", "art": "kunst", "qr": "qr-kode",
           "word": "dagens ord"}
 BY_KIND = {"card": "kvittering", "answer": "svar", "print": "utskrift"}
+
+
+def watched(d, run):
+    """Run a question with its steps recorded under the id the page sent (d["rid"]), and a deadline the model has
+    to answer by, so the page can show what's happening and nobody waits forever."""
+    progress.start(d.get("rid"))
+    try:
+        return run(time.monotonic() + progress.LIMIT_S)
+    finally:
+        progress.finish()
 
 
 def file_issue(preset, wish):
@@ -527,6 +538,8 @@ class Handler(BaseHTTPRequestHandler):
             buf = io.BytesIO()
             qrcode.make(URL, border=2, box_size=6).save(buf)
             self.reply(200, buf.getvalue(), "image/png")
+        elif path == "/api/progress":  # what a question (by the id the page sent with it) is doing right now
+            self.json(progress.get(parse_qs(urlparse(self.path).query).get("id", [""])[0]))
         elif path == "/api/version":  # which commit this server runs: after a push, has the old Mac pulled it yet?
             self.json({"commit": VERSION})
         elif path == "/api/url":
@@ -599,7 +612,8 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/ask":
                 d = json.loads(body)
                 m, key = self.model(d)
-                self.json(answer_json(*agent.ask(d["q"], use=m, api_key=key), model=m))
+                self.json(answer_json(*watched(d, lambda deadline: agent.ask(d["q"], use=m, api_key=key,
+                                                                              deadline=deadline)), model=m))
             elif url.path == "/api/heard":  # the question box, dumb first: a receipt the rules can make, else 204
                 text = json.loads(body)["q"]
                 hit = router.receipt(text, CARDS)
@@ -622,14 +636,15 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/preset":  # a wished-for button: its prompt, asked like a question
                 d = json.loads(body)
                 p, (m, key) = presets.get(d["id"]), self.model(d)
-                self.json(answer_json(*agent.ask(p["prompt"], use=m, api_key=key), icon=p["icon"], model=m))
+                self.json(answer_json(*watched(d, lambda deadline: agent.ask(p["prompt"], use=m, api_key=key,
+                                                                              deadline=deadline)), icon=p["icon"], model=m))
             elif url.path == "/api/wish":  # "ønsk deg en kvittering": Claude designs a preset, if it can
                 key = self.headers.get("X-Api-Key") or None
                 if self.online() and not key:  # designing one always takes a paid model
                     raise NeedsKey("Å lage en ny knapp bruker Claude, som koster penger. Utenfra kjører det på "
                                    "din egen API-nøkkel: legg den inn under modellvelgeren.")
                 wish = json.loads(body)["text"]
-                reply, preset, dollars = agent.design_preset(wish, api_key=key)
+                reply, preset, dollars = watched(json.loads(body), lambda deadline: agent.design_preset(wish, api_key=key))
                 if preset:  # it waits for the admin; a GitHub issue tells them, if there's a token for one
                     preset["issue"] = file_issue(preset, wish)
                 self.json({"reply": reply, "preset": preset, "cost": dollars, "spent": agent.spent})
@@ -711,6 +726,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.receipt(CARDS[url.path[10:]](), q, label=label_for("card", url.path[10:]))
             else:
                 self.json({"error": "not found"}, 404)
+        except TimeoutError as e:  # the model took longer than a question gets: say so, plainly
+            self.json({"error": str(e), "timeout": True}, 504)
         except NeedsKey as e:
             self.json({"error": str(e), "need_key": True}, 401)
         except anthropic.AuthenticationError as e:

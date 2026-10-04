@@ -13,6 +13,7 @@ from anthropic import Anthropic, beta_tool
 import cookbook
 import local
 import presets
+import progress
 import shoplist
 import websearch
 
@@ -238,51 +239,111 @@ def client_for(api_key=None):
     return Anthropic(api_key=api_key) if api_key else client
 
 
-def ask(question, voice=False, use=None, api_key=None):
+# The question's language, so the answer comes back in it: a handful of everyday words per language (the most
+# hits wins; Norwegian first, so a tie with Danish is Norwegian), or the alphabet for those that have their own.
+WORDS = {
+    "Norwegian": "og er det ikke jeg du på en et til med som har vil kan hva hvordan hvor når blir været i morgen "
+                 "hvilke noen skal kan dere vi meg deg".split(),
+    "English": "the and is it you to of a in that for with on this what when how where will weather tomorrow "
+               "which can are do does there my your".split(),
+    "Swedish": "och är inte jag på ett till med som har vill kan vad hur var när blir vädret imorgon vilka".split(),
+    "Danish": "og er det ikke jeg du på en et til med som har vil kan hvad hvordan hvor hvornår bliver vejret i morgen "
+              "hvilke nogen skal vi mig dig".split(),
+    "German": "und ist das nicht ich du auf ein eine zu mit wie was wo wann wird wetter morgen der die gibt".split(),
+    "French": "et est le la les ne pas je tu un une avec comment quoi où quand sera météo demain quel".split(),
+    "Spanish": "y es el la los no yo tú un una con cómo qué dónde cuándo será tiempo mañana cuál".split(),
+}
+SCRIPTS = [("Korean", "\uac00-\ud7a3"), ("Japanese", "\u3040-\u30ff"), ("Chinese", "\u4e00-\u9fff"),
+           ("Russian", "\u0400-\u04ff"), ("Greek", "\u0370-\u03ff"), ("Arabic", "\u0600-\u06ff")]
+
+
+def language(text):
+    """The language a question is written in, or None if it's too short or unclear to tell."""
+    import re
+    for name, chars in SCRIPTS:
+        if re.search(f"[{chars}]", text):
+            return name
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    hits = {name: sum(w in vocab for w in words) for name, vocab in WORDS.items()}
+    best = max(hits, key=hits.get)
+    return best if hits[best] else None
+
+
+def reply_in(question):
+    """The line that makes the answer come back in the question's language, whatever came before it."""
+    lang = language(question)
+    if not lang:
+        return "\nReply in the same language as the user's latest message."
+    return (f"\nThe user's latest message is in {lang}: write your whole reply in {lang}, whatever language earlier "
+            "messages, tool results or recipes are in. Recipes you save with save_draft stay in Norwegian.")
+
+
+def ask(question, voice=False, use=None, api_key=None, deadline=None):
     """-> (answer text, estimated $ for it). use: a model for this question only, instead of the server's;
-    api_key: the asker's own, so a paid model bills their account and not the flat's."""
+    api_key: the asker's own, so a paid model bills their account and not the flat's.
+    deadline: time.monotonic() by which to give up (TimeoutError), so the asker hears it rather than waits."""
     m = use or model
     if m not in MODELS:
         raise ValueError(f"Unknown model {m!r}")
     via = client_for(api_key)
     if m != "local" and not (via.api_key or via.auth_token):
         raise RuntimeError(NO_KEY)
-    with _lock:
-        return _ask(question, voice, m, via)
+    if not _lock.acquire(blocking=False):  # someone else's question first: one conversation at a time
+        progress.step("Venter på et annet spørsmål")
+        _lock.acquire()
+    try:
+        return _ask(question, voice, m, via, deadline)
+    finally:
+        _lock.release()
 
 
-def _ask(question, voice, m, via):
+def _ask(question, voice, m, via, deadline=None):
     global history, last_ask, last_model
     if time.time() - last_ask > 600 or m != last_model:  # ponytail: follow-ups work for 10 min; a new model
         history = []                                     # starts fresh, as one's tool blocks confuse another
     last_ask, last_model = time.time(), m
     cookbook.last = None
     history.append({"role": "user", "content": f"[{datetime.now():%A %d.%m.%Y %H:%M}] {question}"})
+    system = (VOICE if voice else PAPER) + reply_in(question)
+    progress.step(f"Spør {MODELS[m]['name']}")
     if m == "local":  # free: Ollama on the work desktop or this machine, with our own tools (no web)
-        return local.chat(VOICE if voice else PAPER, history, TOOLS + LOCAL_WEB), 0.0
-    return _run(VOICE if voice else PAPER, history, use=m, via=via)
+        return local.chat(system, history, TOOLS + LOCAL_WEB, deadline=deadline), 0.0
+    return _run(system, history, use=m, via=via, deadline=deadline)
 
 
-def _run(system, messages, extra_tools=(), use=None, effort="low", via=None):
+def _run(system, messages, extra_tools=(), use=None, effort="low", via=None, deadline=None):
     """The tool loop. Appends the conversation to `messages`; -> (final text, estimated $).
     use: a model other than the server's (the asker's pick; preset design uses a stronger one).
     via: the client to bill (a visitor's key); only what the flat's own key spends counts in `spent`."""
     global spent
+    import anthropic
     m, via = use or model, via or client
     p = params(m, effort)
     p["tools"] = p["tools"] + list(extra_tools)
     dollars = 0.0
     for _ in range(5):  # the runner doesn't resume pause_turn (long server-tool turns); restart it
-        runner = via.beta.messages.tool_runner(
+        left = deadline - time.monotonic() if deadline else None
+        if left is not None and left <= 0:
+            raise TimeoutError(progress.TOO_SLOW)
+        runner = (via.with_options(timeout=left) if left else via).beta.messages.tool_runner(
             model=m, system=system, messages=list(messages),
             cache_control={"type": "ephemeral"},  # tool-loop turns re-send everything; cached reads cost 10%
             **p)
         msg = None
-        for msg in runner:
-            dollars += cost(msg.model, msg.usage)
-            messages.append({"role": "assistant", "content": msg.content})
-            if (result := runner.generate_tool_call_response()) is not None:
-                messages.append(result)
+        try:
+            for msg in runner:
+                dollars += cost(msg.model, msg.usage)
+                messages.append({"role": "assistant", "content": msg.content})
+                for b in msg.content:  # what it's doing: our tools, and the web tools Anthropic runs for it
+                    if b.type in ("tool_use", "server_tool_use"):
+                        progress.step(progress.describe(b.name, b.input))
+                if (result := runner.generate_tool_call_response()) is not None:
+                    messages.append(result)
+                    progress.step("Venter på modellen")
+                if deadline and time.monotonic() > deadline:
+                    raise TimeoutError(progress.TOO_SLOW)
+        except anthropic.APITimeoutError:
+            raise TimeoutError(progress.TOO_SLOW) from None
         if msg is None or msg.stop_reason != "pause_turn":
             break
     if via is client:
