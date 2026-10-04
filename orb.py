@@ -64,6 +64,14 @@ def _save():
         pass
 
 
+def note(text):
+    """A line about how the voice is doing ("hørte 2.1 s lyd ..."), small in the transcript."""
+    with _lock:
+        _log.append({"who": "sys", "text": text, "at": f"{datetime.now():%H:%M}"})
+        _state["seq"] += 1
+        _save()
+
+
 def log():
     with _lock:
         return list(_log)

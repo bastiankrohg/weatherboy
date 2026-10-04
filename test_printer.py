@@ -841,6 +841,8 @@ assert [(e["who"], e["text"]) for e in orb.log()] == [("du", "hvordan blir være
                                                       ("-", "lagt på")]
 assert json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/orb/log").read())[0]["who"] == "du"
 assert json.loads(orb.FILE.read_text(encoding="utf-8")) == orb.log()  # on disk too: a restart doesn't wipe it
+orb.note("hørte 2.0 s lyd, topp -18 dB")
+assert orb.log()[-1]["who"] == "sys" and orb.log()[-1]["text"].startswith("hørte")
 
 # the page's side of it: the steps under the id it sent, and a slow model as a 504 that says so
 def ask_watched(q, deadline=None, **kw):

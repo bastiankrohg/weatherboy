@@ -11,6 +11,7 @@
     python printq.py 192.168.0.108                  what's waiting for the printer, or print it all
 """
 import argparse
+import math
 import os
 import sys
 import time
@@ -134,7 +135,16 @@ def run_voice(a, password):
         orb.set("think")
         screen("think")
         tone(speak.BLIP)
-        return stt(audio)[0].strip()
+        # what it caught and what it made of it, in the transcript: when the words don't come through,
+        # this says whether it was the sound or the speech-to-text
+        peak = 20 * math.log10(max(float(abs(audio).max()), 1e-6))
+        orb.note(f"hørte {len(audio) / listen.RATE:.1f} s lyd, topp {peak:.0f} dB")
+        t = time.monotonic()
+        text, lang = stt(audio)
+        text = text.strip()
+        orb.note(f"tolket som {lang} på {time.monotonic() - t:.1f} s: " + (f"«{text}»" if text else "ingen ord"))
+        print(f"heard {len(audio) / listen.RATE:.1f} s, peak {peak:.0f} dB -> {lang}: {text!r}")
+        return text
 
     chat = False
     while True:
