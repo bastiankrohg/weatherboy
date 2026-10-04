@@ -828,6 +828,35 @@ def esp3(body=None, admin=None):
         return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
+# hearing when someone stops talking, on a handset that hisses above the speech threshold
+import listen, numpy as np
+class FakeMic:
+    def __init__(self, levels):  # one RMS per 100 ms block
+        self.levels = list(levels)
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        pass
+    def read(self, n):
+        rms = self.levels.pop(0) if self.levels else self.levels_end
+        return (np.full((n, 1), rms, dtype="float32"), False)
+def heard(levels, tail, **kw):
+    mic = FakeMic(levels)
+    mic.levels_end = tail
+    real_stream, listen.sd.InputStream = listen.sd.InputStream, lambda **k: mic
+    try:
+        audio = listen.record(threshold=0.02, silence=2.5, max_s=60, **kw)
+    finally:
+        listen.sd.InputStream = real_stream
+    return None if audio is None else len(audio) / listen.RATE
+hiss, speech = 0.03, 0.2  # the hiss alone is louder than the 0.02 threshold
+took = heard([hiss] * 8 + [speech] * 10, hiss)
+assert took is not None and 3.5 < took < 4.5, took  # pre-roll, 1 s of speech, 2.5 s of quiet: not the 60 s cap
+assert abs(20 * np.log10(listen.last_noise) - 20 * np.log10(hiss)) < 0.5  # the hiss, measured
+took = heard([0.001] * 8 + [speech] * 10, 0.001)  # a quiet line works as before
+assert took is not None and 3.5 < took < 4.5, took
+assert heard([hiss] * 40, hiss, wait=2) is None  # nobody talks: hiss alone never counts as speech
+
 # the voice's transcript for the orb page: both sides, repeats once, a line under each call
 import orb
 orb.FILE = Path(tempfile.mkdtemp()) / "samtale.json"  # never the real one

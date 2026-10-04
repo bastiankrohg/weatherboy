@@ -138,7 +138,8 @@ def run_voice(a, password):
         # what it caught and what it made of it, in the transcript: when the words don't come through,
         # this says whether it was the sound or the speech-to-text
         peak = 20 * math.log10(max(float(abs(audio).max()), 1e-6))
-        orb.note(f"hørte {len(audio) / listen.RATE:.1f} s lyd, topp {peak:.0f} dB")
+        noise = 20 * math.log10(max(listen.last_noise, 1e-6))
+        orb.note(f"hørte {len(audio) / listen.RATE:.1f} s lyd, topp {peak:.0f} dB, bakgrunnsstøy {noise:.0f} dB")
         t = time.monotonic()
         text, lang = stt(audio)
         text = text.strip()

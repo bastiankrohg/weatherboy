@@ -14,11 +14,19 @@ def device(mic):
     return int(mic) if mic and mic.isdigit() else mic  # index, or a name substring like "USB"
 
 
+NOISE_BLOCKS = 5  # 0.5 s of the line's own hiss, measured before anyone may start talking
+last_noise = 0.0  # the background level the last recording measured (RMS), for reporting
+
+
 def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=None, level=None):
-    """Block until RMS > threshold, then return audio until `silence` seconds of quiet.
+    """Block until someone talks, then return audio until `silence` seconds of quiet.
+    "Talking" is louder than `threshold` and than three times the line's own background hiss, measured over the
+    first half second: a handset that hisses above `threshold` would otherwise never seem to go quiet.
     Returns None if nobody starts talking within `wait` seconds, or as soon as abort() is true (hung up).
     level: called with each block's RMS, for a meter (the orb)."""
+    global last_noise
     pre = collections.deque(maxlen=5)  # 0.5 s pre-roll so the first syllable survives
+    hiss = []
     buf, quiet, waited = [], 0.0, 0.0
     with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", device=device(mic), blocksize=BLOCK) as s:
         while True:
@@ -28,6 +36,14 @@ def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=Non
             rms = float(np.sqrt(np.mean(x * x)))
             if level:
                 level(rms)
+            if len(hiss) < NOISE_BLOCKS:  # still learning the background: nobody counts as talking yet
+                hiss.append(rms)
+                pre.append(x)
+                waited += BLOCK / RATE
+                if len(hiss) == NOISE_BLOCKS:
+                    last_noise = float(np.median(hiss))
+                    threshold = max(threshold, 3 * last_noise)
+                continue
             loud = rms > threshold
             if not buf:
                 waited += BLOCK / RATE
