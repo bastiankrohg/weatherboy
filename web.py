@@ -152,6 +152,20 @@ LABELS = {"weather": "vær", "departures": "avganger", "flights": "fly", "art": 
 BY_KIND = {"card": "kvittering", "answer": "svar", "print": "utskrift"}
 
 
+LOG = Path(os.environ.get("WEATHERBOY_LOG", Path.home() / "weatherboy.log"))  # where the service's output goes
+
+
+def log_tail(n):
+    """The last n lines of the server's log, or a line saying there's none."""
+    try:
+        with LOG.open("rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 400_000))  # the end is enough, and the log only grows
+            return [l.decode(errors="replace") for l in f.read().splitlines(keepends=True)[-n:]]
+    except OSError as e:
+        return [f"(no log at {LOG}: {e})\n"]
+
+
 def watched(d, run):
     """Run a question with its steps recorded under the id the page sent (d["rid"]), and a deadline the model has
     to answer by, so the page can show what's happening and nobody waits forever."""
@@ -540,6 +554,11 @@ class Handler(BaseHTTPRequestHandler):
             buf = io.BytesIO()
             qrcode.make(URL, border=2, box_size=6).save(buf)
             self.reply(200, buf.getvalue(), "image/png")
+        elif path == "/api/log":  # the end of the server's log, for the admin (it has what people said)
+            if not self.admin():
+                return self.json({"error": "Bare admin kan lese loggen."}, 403)
+            n = min(int(parse_qs(urlparse(self.path).query).get("lines", ["200"])[0]), 2000)
+            self.reply(200, "".join(log_tail(n)).encode(), "text/plain; charset=utf-8")
         elif path == "/api/progress":  # what a question (by the id the page sent with it) is doing right now
             self.json(progress.get(parse_qs(urlparse(self.path).query).get("id", [""])[0]))
         elif path == "/api/version":  # which commit this server runs: after a push, has the old Mac pulled it yet?

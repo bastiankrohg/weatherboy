@@ -888,6 +888,21 @@ agent.ask = too_slow
 code, _, out = ask3("/api/ask", {"q": "hei", "model": "local"})
 assert code == 504 and json.loads(out) == {"error": progress.TOO_SLOW, "timeout": True}
 agent.ask = lambda q, voice=False, use=None, api_key=None, deadline=None: calls_made.append((q, use, api_key)) or ("tema: idea\nJa.", 0.0)
+web.LOG = Path(tempfile.mkdtemp()) / "weatherboy.log"
+web.LOG.write_text("".join(f"line {i}\n" for i in range(500)), encoding="utf-8")
+def get3(path, admin=None):
+    h = {"CF-Connecting-IP": "84.214.212.9"} | ({"X-Admin": admin} if admin else {})
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv3.server_port}{path}", headers=h))
+        return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, ""
+was_admin, os.environ["WEATHERBOY_ADMIN"] = os.environ.get("WEATHERBOY_ADMIN"), "hemmelig"
+assert get3("/api/log")[0] == 403  # what people said is in there: admin only
+code, text = get3("/api/log?lines=3", admin="hemmelig")
+assert code == 200 and text == "line 497\nline 498\nline 499\n"
+if was_admin is not None:
+    os.environ["WEATHERBOY_ADMIN"] = was_admin
 code, d = esp3()
 assert code == 200 and d["found"] and d["lifted"] and d["config"]["host"] == "172.20.10.5" and d["where"] == "serial /dev/fake"
 assert esp3({"set": {"host": "192.168.0.42"}})[0] == 403  # anyone may look, only the admin may change it
