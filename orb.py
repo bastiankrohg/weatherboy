@@ -3,28 +3,46 @@ it's in and listen/speak report how loud it is; the page gets it all as a stream
 
     mode: idle (hung up) | listen | think | speak | error
     label: the same short line the handset's LCD shows ("Lytter...", "Skriver ut...")
-    heard / said: the last thing the person said, and the last answer
+    heard / said: the last thing the person said, and the last answer; both also go in the transcript (log())
 
 Stdlib only, and nothing here knows about audio devices: the web server runs it on an old Mac without the
 voice extra, where the orb simply sits idle."""
+import collections
 import json
 import math
 import sys
 import threading
 import time
+from datetime import datetime
 
 FPS = 30
-_state = {"mode": "idle", "label": "", "heard": "", "said": "", "level": 0.0}
+_state = {"mode": "idle", "label": "", "heard": "", "said": "", "level": 0.0, "seq": 0}
+# The transcript: what was said both ways, kept across hang-ups. The stream only carries "seq", which goes up
+# when this changes, and the page fetches the lines then (/api/orb/log) instead of 30 times a second.
+_log = collections.deque(maxlen=30)
 _level_at = 0.0
 _lock = threading.Lock()
 
 
 def set(mode=None, label=None, heard=None, said=None):
-    """Change whichever fields are given; the others stay."""
+    """Change whichever fields are given; the others stay. Something heard or said also goes in the transcript,
+    and going idle after a conversation draws a line under it."""
     with _lock:
+        for who, text in (("du", heard), ("weatherboy", said)):
+            if text and not (_log and _log[-1]["who"] == who and _log[-1]["text"] == text):
+                _log.append({"who": who, "text": text, "at": f"{datetime.now():%H:%M}"})
+                _state["seq"] += 1
+        if mode == "idle" and _log and _log[-1]["who"] != "-":
+            _log.append({"who": "-", "text": "lagt på", "at": f"{datetime.now():%H:%M}"})
+            _state["seq"] += 1
         for k, v in (("mode", mode), ("label", label), ("heard", heard), ("said", said)):
             if v is not None:
                 _state[k] = v
+
+
+def log():
+    with _lock:
+        return list(_log)
 
 
 def level(rms):

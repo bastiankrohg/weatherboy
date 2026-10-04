@@ -53,10 +53,16 @@
   .vu i.red.on { background: #ff4a2a; box-shadow: 0 0 6px #ff4a2a; }
   .read { color: var(--muted); font-size: 12px; text-align: right; margin-top: 4px; }
   .read b { color: rgb(var(--ph)); font-weight: 400; }
-  .text { min-height: 3.2em; max-height: 9.5em; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
-  .heard { color: var(--muted); }
-  .heard:not(:empty)::before { content: "› "; }
-  .said:not(:empty)::after { content: "▌"; animation: blink 1s steps(2) infinite; }
+  /* the transcript: newest at the bottom, older lines scroll up and out of sight */
+  .text { height: 9.6em; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; scrollbar-width: none; }
+  .text::-webkit-scrollbar { display: none; }
+  .text > div { display: grid; grid-template-columns: 3.4em 1fr; gap: 8px; }
+  .text time { color: var(--muted); font-size: 11px; padding-top: 2px; }
+  .text .du { color: var(--muted); }
+  .text .du span::before { content: "› "; }
+  .text .rule { color: var(--muted); opacity: .7; }
+  .text .rule span { font-size: 11px; letter-spacing: .3em; }
+  .text .typing span::after { content: "▌"; animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 </style>
 </head>
@@ -78,7 +84,7 @@
     <canvas id="scope"></canvas>
     <div><div class="vu" id="vu"></div><div class="read"><b id="freq">88.6</b> MHz · <b id="db">-∞</b> dB</div></div>
   </div>
-  <div class="text glow"><div class="heard" id="heard"></div><div class="said" id="said"></div></div>
+  <div class="text glow" id="log" aria-live="polite"></div>
 </div>
 <script>
 // Each mode is a station on the dial and a phosphor colour. "off" is the stream gone: static, no station.
@@ -122,7 +128,34 @@ addEventListener("resize", fit); fit();
 
 let lv = 0, rot = 0, mhz = 88.6, col = [255, 157, 46], waves = [], lastWave = 0, prevLv = 0, t0 = performance.now(), prev = t0;
 const hist = new Array(160).fill(0);
-let shown = "", said = "";
+let typing = null, shown = "", seq = -1, fetching = false;
+
+// The transcript, fetched when the stream says it moved on. The newest answer is typed out like a teleprinter.
+async function loadLog(want) {
+  if (fetching) return;
+  fetching = true;
+  try {
+    const lines = await (await fetch("/api/orb/log")).json();
+    const box = $("log"), stuck = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+    box.innerHTML = "";
+    lines.forEach((l, i) => {
+      const row = document.createElement("div");
+      row.className = l.who === "-" ? "rule" : l.who;
+      row.innerHTML = "<time></time><span></span>";
+      row.querySelector("time").textContent = l.at;
+      row.querySelector("span").textContent = l.who === "-" ? `— ${l.text} —` : l.text;
+      box.append(row);
+      if (i === lines.length - 1 && l.who === "weatherboy" && seq !== -1) {  // new since the page opened: type it
+        typing = { el: row, text: l.text };
+        shown = "";
+        row.classList.add("typing");
+      }
+    });
+    if (stuck || seq === -1) box.scrollTop = box.scrollHeight;
+    seq = want;
+  } catch {}
+  fetching = false;
+}
 
 function project(x, y, z, tilt) {
   return [x, y * Math.cos(tilt) - z * Math.sin(tilt), z * Math.cos(tilt) + y * Math.sin(tilt)];
@@ -245,10 +278,12 @@ function frame(now) {
   $("mode").textContent = online ? m.name : "INGEN SIGNAL";
   $("label").textContent = online ? S.label : "venter på main.py";
   $("rec").textContent = online ? "PÅ LUFTA" : "INGEN SIGNAL"; $("rec").classList.toggle("off", !online);
-  $("heard").textContent = S.heard;
-  if (S.said !== said) { said = S.said; shown = ""; }
-  if (shown.length < said.length) shown = said.slice(0, shown.length + Math.max(1, Math.round(dt * 60)));
-  $("said").textContent = shown;
+  if (online && S.seq !== undefined && S.seq !== seq) loadLog(S.seq);
+  if (typing && shown.length < typing.text.length) {
+    shown = typing.text.slice(0, shown.length + Math.max(1, Math.round(dt * 60)));
+    typing.el.querySelector("span").textContent = shown;
+    $("log").scrollTop = $("log").scrollHeight;
+  } else if (typing) { typing.el.classList.remove("typing"); typing = null; }
   $("clock").textContent = new Date().toLocaleTimeString("no-NO");
   requestAnimationFrame(frame);
 }

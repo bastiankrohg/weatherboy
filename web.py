@@ -524,6 +524,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, PAGE.read_bytes(), "text/html; charset=utf-8")
         elif path == "/orb":  # the voice loop on screen, for the Mac it runs on (main.py --gui)
             self.reply(200, ORB_PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path == "/api/orb/log":  # the voice's transcript, fetched when the stream's "seq" moves on
+            self.json(orb.log())
         elif path == "/api/orb":  # Server-Sent Events: the orb's state, FPS times a second, until the page goes
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
