@@ -48,6 +48,18 @@ PORT = 8615
 MAX_UPLOAD = 25_000_000  # bytes; a big phone photo is ~10 MB
 PAGE = Path(__file__).with_name("web.html")
 ORB_PAGE = Path(__file__).with_name("orb.html")
+
+
+def _version():
+    import subprocess
+    try:
+        return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent, capture_output=True,
+                              text=True, timeout=5).stdout.strip() or "?"
+    except OSError:
+        return "?"
+
+
+VERSION = _version()
 PRINTER = None           # printer IP, set by start(); None = previews only
 URL = f"http://127.0.0.1:{PORT}"  # this page's address for the QR code, set by start()
 PUBLIC_URL = os.environ.get("WEATHERBOY_PUBLIC_URL", "")  # the tunnel's address, e.g. https://weatherboy.example.no
@@ -515,6 +527,8 @@ class Handler(BaseHTTPRequestHandler):
             buf = io.BytesIO()
             qrcode.make(URL, border=2, box_size=6).save(buf)
             self.reply(200, buf.getvalue(), "image/png")
+        elif path == "/api/version":  # which commit this server runs: after a push, has the old Mac pulled it yet?
+            self.json({"commit": VERSION})
         elif path == "/api/url":
             self.json({"url": URL})
         elif path == "/api/recipe-text":

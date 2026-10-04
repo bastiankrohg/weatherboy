@@ -267,7 +267,7 @@ All reserved on the router (http://192.168.0.1), so they stay put:
 
 ## Running on the MacBook Pro (2012, macOS 11.7)
 
-The server runs there (192.168.0.220), with the phone base on its USB. The handset's speech needs a newer machine (onnxruntime has no Intel-Mac builds), which can send transcripts to `/api/voice` instead. You can reach it with `ssh Bastian@192.168.0.220` once Remote Login is on (System Preferences → Sharing).
+The server runs there (192.168.0.220), with the phone base on its USB. The handset's speech installs there too (`uv sync --extra voice --extra phone`): on Intel Macs `pyproject.toml` holds onnxruntime at 1.19, the last with builds for macOS 11. You can reach it with `ssh Bastian@192.168.0.220` once Remote Login is on (System Preferences → Sharing).
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -349,7 +349,7 @@ flowchart TD
     Start{Platform} --> Win["Windows / Mac"]
     Start --> Pi["Raspberry Pi 4/5, 64-bit Pi OS<br/>sudo apt install libportaudio2"]
     Win & Pi --> UV["install uv: docs.astral.sh/uv"]
-    UV --> Req["uv sync: the server<br/>uv sync --extra voice: + the handset's speech<br/>(not on Intel Macs before macOS 11)<br/>uv sync --extra phone: + the ESP8266 on USB"]
+    UV --> Req["uv sync: the server<br/>uv sync --extra voice: + the handset's speech<br/>(macOS 11+ on Intel Macs)<br/>uv sync --extra phone: + the ESP8266 on USB"]
     Req --> Key[".env next to agent.py (git-ignored):<br/>ANTHROPIC_API_KEY=sk-ant-...<br/>optional: WEATHERBOY_PLACE, _LATLON, _STOPS, _UA, _RECIPES, _MODEL"]
     Key --> Check["uv run test_printer.py (with the voice extra)"]
 ```

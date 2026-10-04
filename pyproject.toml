@@ -18,13 +18,15 @@ dependencies = [
 phone = [
     "pyserial>=3.5",
 ]
-# The handset (main.py): speech in and out. `uv sync --extra voice`. onnxruntime (Piper, Whisper's VAD) has no
-# Intel-Mac builds and PyAV needs macOS 11+, so an old Mac runs the server and leaves speech to another machine.
+# The handset (main.py): speech in and out. `uv sync --extra voice`. PyAV needs macOS 11+; on Intel Macs onnxruntime
+# (Piper, Whisper's VAD) is held at 1.19, the last with Intel builds for macOS 11 (below).
 voice = [
     "faster-whisper>=1.2.1",
     "piper-tts>=1.8.0",
     "sounddevice>=0.5.6",
     "numpy",
+    # Intel Macs: onnxruntime's newer Intel builds need macOS 13, and the old MacBook runs 11
+    "onnxruntime<1.20; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
 # The browser tests (test_web_ui.py): drives the page in a real Chromium. `uv run playwright install chromium`
 # once, then `uv run test_web_ui.py`.
