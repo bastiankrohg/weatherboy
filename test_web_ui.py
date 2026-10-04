@@ -38,8 +38,15 @@ os.makedirs(OUT, exist_ok=True)
 
 errors = []
 with sync_playwright() as p:
-    browser = p.chromium.launch(channel="msedge")
-    page = browser.new_page(viewport={"width": 1200, "height": 1100})
+    def launch():  # Edge on the Windows laptop, Chrome on a Mac, else Playwright's own Chromium
+        for channel in ("msedge", "chrome", None):
+            try:
+                return p.chromium.launch(**({"channel": channel} if channel else {}))
+            except Exception:
+                if channel is None:
+                    raise
+    browser = launch()
+    page = browser.new_page(viewport={"width": 1500, "height": 1100})  # wide: both panes open
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     # the one 500 the queue raises on purpose ("Skriv ut alt" with no printer) is checked where it happens
