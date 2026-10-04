@@ -281,7 +281,10 @@ For the tunnel, copy `~/.cloudflared/` from the machine that ran it before: `cer
 
 ```sh
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/2025.8.1/cloudflared-darwin-amd64.tgz | tar xz -C ~/.local/bin
+printf "\nno-autoupdate: true\n" >> ~/.cloudflared/config.yml
 ```
+
+**Turn off self-updating, as above.** By default cloudflared replaces itself every day with the newest release, which won't start on macOS 11: the tunnel then dies overnight. The service file and `web.py --tunnel` also pass `--no-autoupdate`.
 
 The server and the tunnel run as two background services (LaunchAgents, in [deploy/macos](deploy/macos)). They start when you log in, and launchd starts them again if they stop. `caffeinate -is` keeps the Mac awake while the server runs, on battery too, but keep it on the charger:
 

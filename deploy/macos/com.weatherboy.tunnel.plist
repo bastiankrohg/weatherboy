@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- The Cloudflare tunnel to print.bastiankrohg.com: starts at login, and again if it stops.
-     Its own service, so restarting the server never leaves a second tunnel behind. Logs: ~/weatherboy-tunnel.log -->
+     Its own service, so restarting the server never leaves a second tunnel behind. Logs: ~/weatherboy-tunnel.log
+     no-autoupdate: cloudflared otherwise replaces itself daily with the newest release, which needs macOS 15. -->
 <plist version="1.0">
 <dict>
 	<key>Label</key>
@@ -10,6 +11,7 @@
 	<array>
 		<string>/Users/Bastian/.local/bin/cloudflared</string>
 		<string>tunnel</string>
+		<string>--no-autoupdate</string>
 		<string>run</string>
 		<string>weatherboy</string>
 	</array>

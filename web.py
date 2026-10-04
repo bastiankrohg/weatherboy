@@ -748,7 +748,9 @@ def tunnel(name):
     import subprocess
     exe = (shutil.which("cloudflared") or next((str(p) for p in (Path.home() / ".local" / "bin" / "cloudflared",)
                                                 if p.exists()), None) or str(Path.home() / "bin" / "cloudflared.exe"))
-    proc = subprocess.Popen([exe, "tunnel", "run", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # no self-updates: on an old Mac the newest cloudflared doesn't start, and it would replace a working one
+    proc = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "run", name], stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
     atexit.register(proc.terminate)
     return proc
 
