@@ -830,6 +830,7 @@ def esp3(body=None, admin=None):
         return e.code, json.loads(e.read())
 # the voice's transcript for the orb page: both sides, repeats once, a line under each call
 import orb
+orb.FILE = Path(tempfile.mkdtemp()) / "samtale.json"  # never the real one
 orb._log.clear()
 orb.set("think", heard="hvordan blir været")
 orb.set(said="Sol og 14 grader.")
@@ -839,6 +840,7 @@ orb.set("idle")  # idle again with nothing new: no second line
 assert [(e["who"], e["text"]) for e in orb.log()] == [("du", "hvordan blir været"), ("weatherboy", "Sol og 14 grader."),
                                                       ("-", "lagt på")]
 assert json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/orb/log").read())[0]["who"] == "du"
+assert json.loads(orb.FILE.read_text(encoding="utf-8")) == orb.log()  # on disk too: a restart doesn't wipe it
 
 # the page's side of it: the steps under the id it sent, and a slow model as a 504 that says so
 def ask_watched(q, deadline=None, **kw):

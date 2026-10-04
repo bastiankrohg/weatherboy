@@ -138,6 +138,7 @@ async function loadLog(want) {
     const lines = await (await fetch("/api/orb/log")).json();
     const box = $("log"), stuck = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
     box.innerHTML = "";
+    if (!lines.length) box.innerHTML = '<div class="rule"><time></time><span>Ingen samtale ennå: løft røret og si noe</span></div>';
     lines.forEach((l, i) => {
       const row = document.createElement("div");
       row.className = l.who === "-" ? "rule" : l.who;

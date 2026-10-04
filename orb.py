@@ -14,12 +14,19 @@ import sys
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 
 FPS = 30
 _state = {"mode": "idle", "label": "", "heard": "", "said": "", "level": 0.0, "seq": 0}
 # The transcript: what was said both ways, kept across hang-ups. The stream only carries "seq", which goes up
 # when this changes, and the page fetches the lines then (/api/orb/log) instead of 30 times a second.
+# Kept on disk too, so a restart (every deploy is one) doesn't wipe it.
+FILE = Path(__file__).with_name("data") / "samtale.json"
 _log = collections.deque(maxlen=30)
+try:
+    _log.extend(json.loads(FILE.read_text(encoding="utf-8")))
+except (OSError, ValueError):
+    pass
 _level_at = 0.0
 _lock = threading.Lock()
 
@@ -35,9 +42,26 @@ def set(mode=None, label=None, heard=None, said=None):
         if mode == "idle" and _log and _log[-1]["who"] != "-":
             _log.append({"who": "-", "text": "lagt på", "at": f"{datetime.now():%H:%M}"})
             _state["seq"] += 1
+        if _state["seq"] != _saved[0]:
+            _save()
         for k, v in (("mode", mode), ("label", label), ("heard", heard), ("said", said)):
             if v is not None:
                 _state[k] = v
+
+
+_saved = [0]  # the seq last written to FILE
+
+
+def _save():
+    """Write the transcript out (with _lock held). A disk that won't take it only costs the copy on disk."""
+    try:
+        FILE.parent.mkdir(exist_ok=True)
+        tmp = FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(list(_log), ensure_ascii=False), encoding="utf-8")
+        tmp.replace(FILE)
+        _saved[0] = _state["seq"]
+    except OSError:
+        pass
 
 
 def log():
