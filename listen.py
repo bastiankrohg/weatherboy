@@ -22,7 +22,8 @@ def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=Non
     """Block until someone talks, then return audio until `silence` seconds of quiet.
     "Talking" is louder than `threshold` and than three times the line's own background hiss, measured over the
     first half second: a handset that hisses above `threshold` would otherwise never seem to go quiet.
-    Returns None if nobody starts talking within `wait` seconds, or as soon as abort() is true (hung up).
+    abort() true (the handset hung up) ends it: what was said so far is returned, as hanging up just means
+    "that's all", and None only if nobody had started talking. None too if nobody starts within `wait` seconds.
     level: called with each block's RMS, for a meter (the orb)."""
     global last_noise
     pre = collections.deque(maxlen=5)  # 0.5 s pre-roll so the first syllable survives
@@ -42,7 +43,7 @@ def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=Non
             x = s.read(BLOCK)[0][:, 0]
             if abort and abort():
                 stopped("hung up")
-                return None
+                return np.concatenate(buf) if buf else None
             rms = float(np.sqrt(np.mean(x * x)))
             recent.append(rms)
             if level:

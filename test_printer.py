@@ -856,6 +856,11 @@ assert abs(20 * np.log10(listen.last_noise) - 20 * np.log10(hiss)) < 0.5  # the 
 took = heard([0.001] * 8 + [speech] * 10, 0.001)  # a quiet line works as before
 assert took is not None and 3.5 < took < 4.5, took
 assert heard([hiss] * 40, hiss, wait=2) is None  # nobody talks: hiss alone never counts as speech
+blocks = iter(range(10_000))
+took = heard([0.001] * 8 + [speech] * 10, speech, abort=lambda: next(blocks) > 15)  # hung up mid-sentence
+assert took is not None and 1.0 < took < 1.5, took  # what was said so far, not thrown away
+blocks = iter(range(10_000))
+assert heard([0.001] * 40, 0.001, abort=lambda: next(blocks) > 15) is None  # hung up before saying anything
 
 # the voice's transcript for the orb page: both sides, repeats once, a line under each call
 import orb
