@@ -166,6 +166,46 @@ def log_tail(n):
         return [f"(no log at {LOG}: {e})\n"]
 
 
+STT = None  # the handset's speech-to-text, handed over by main.py once it's loaded: stt(audio) -> (text, lang)
+_stt_lock = threading.Lock()  # one transcription at a time: the handset and the page share the model
+
+
+class NoSpeech(Exception):
+    """This server has no speech-to-text (no handset loop here, or it hasn't loaded yet)."""
+
+
+def decode_audio(data, rate=16000):
+    """Any audio file the browser records (webm/opus, mp4/aac, wav) -> mono float32 at `rate`, as Whisper takes it.
+    PyAV directly: faster-whisper's own decoder passes PyAV an option that PyAV 19 has dropped."""
+    import av
+    import numpy as np
+    chunks = []
+    with av.open(io.BytesIO(data)) as container:
+        resample = av.AudioResampler(format="s16", layout="mono", rate=rate)
+        for frame in container.decode(audio=0):
+            chunks += [f.to_ndarray() for f in resample.resample(frame)]
+        chunks += [f.to_ndarray() for f in resample.resample(None)]  # what's still in the resampler
+    if not chunks:
+        return np.zeros(0, np.float32)
+    return np.concatenate(chunks, axis=1).reshape(-1).astype(np.float32) / 32768
+
+
+def transcribe(data):
+    """Audio as the browser recorded it (webm/opus, mp4, wav...) -> {"text", "lang"}."""
+    if STT is None:
+        raise NoSpeech("Talegjenkjenningen er ikke i gang her: den starter med røret (main.py).")
+    audio = decode_audio(data)
+    if len(audio) < 16000 * 0.3:
+        return {"text": "", "lang": None}
+    with _stt_lock:
+        text, lang = STT(audio)
+    text = text.strip()
+    if text:
+        orb.set(heard=text)  # the orb's transcript has it too, like the handset's
+    print(f"page mic: {len(audio) / 16000:.1f} s -> {lang}: {text!r}")
+    return {"text": text, "lang": lang}
+
+
 def icon_png(name):
     """A receipt icon as the printer draws it (about 40 dots), cropped to its ink: black lines on transparent,
     so on the paper it sits on top of what's there instead of a white box. KeyError if unknown."""
@@ -571,6 +611,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "Bare admin kan lese loggen."}, 403)
             n = min(int(parse_qs(urlparse(self.path).query).get("lines", ["200"])[0]), 2000)
             self.reply(200, "".join(log_tail(n)).encode(), "text/plain; charset=utf-8")
+        elif path == "/api/hook":  # the handset, for the page's indicator: cheap, it only reads the heartbeats
+            import phone
+            board = phone._shared
+            on_cable = board is not None and isinstance(board.link, phone.SerialLink)
+            self.json({"found": on_cable, "lifted": on_cable and board.lifted()})
         elif path == "/api/icons":  # the receipt icons, for the paper's editor
             self.json(list(layout.ICONS))
         elif path.startswith("/api/icon/") and path.endswith(".png"):
@@ -643,6 +688,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         layout.HEADER.off = q.get("header") == "0"  # ?header=0: no icon and timestamp on top, for this request
+        layout.HEADER.icon = q.get("icon") if q.get("icon") in layout.ICONS else None  # ?icon=music: that one on top
         n = int(self.headers.get("Content-Length") or 0)
         if n > MAX_UPLOAD:
             return self.json({"error": "Filen er for stor (maks 25 MB)."}, 413)
@@ -653,6 +699,8 @@ class Handler(BaseHTTPRequestHandler):
                 m, key = self.model(d)
                 self.json(answer_json(*watched(d, lambda deadline: agent.ask(d["q"], use=m, api_key=key,
                                                                               deadline=deadline)), model=m))
+            elif url.path == "/api/listen":  # speech recorded in the browser -> text, by the handset's own model
+                self.json(transcribe(body))
             elif url.path == "/api/heard":  # the question box, dumb first: a receipt the rules can make, else 204
                 text = json.loads(body)["q"]
                 hit = router.receipt(text, CARDS)
@@ -765,6 +813,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.receipt(CARDS[url.path[10:]](), q, label=label_for("card", url.path[10:]))
             else:
                 self.json({"error": "not found"}, 404)
+        except NoSpeech as e:
+            self.json({"error": str(e)}, 503)
         except TimeoutError as e:  # the model took longer than a question gets: say so, plainly
             self.json({"error": str(e), "timeout": True}, 504)
         except NeedsKey as e:

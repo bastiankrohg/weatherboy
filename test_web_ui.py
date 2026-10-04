@@ -31,6 +31,21 @@ presets.create_preset("Dagens ord", "Gi meg et sjeldent norsk ord.", "idea")
 presets.approve(presets.last["id"])  # a wish is a button once the admin says so
 web.CHECKS = {"printer": ("Skriver", lambda: {"level": "red", "state": "svarer ikke"}),  # fast fakes:
               "local": ("Lokal modell", lambda: {"level": "green", "state": "robotlab"})}   # no real services
+# a handset on a fake cable, lifted when the test says so, and a speech model that hears "qr"
+import phone, queue as _queue, threading as _threading
+class FakeLink(phone.SerialLink):
+    def __init__(self):
+        self.where, self.inbox, self._write = "serial /dev/fake", _queue.Queue(), _threading.Lock()
+    def lines(self):
+        while True:
+            yield self.inbox.get()
+    def send_line(self, text):
+        pass
+hook_link = FakeLink()
+phone._shared = phone.Phone(hook_link)
+hook_link.inbox.put(b"HOOK 0")
+heard_audio = []
+web.STT = lambda audio: heard_audio.append(len(audio)) or ("qr", "no")
 server = web.start(0, None)  # port 0: a free port, so a stray server can't answer in its place
 B = f"http://127.0.0.1:{server.server_address[1]}"
 OUT = "out/"
@@ -41,7 +56,8 @@ with sync_playwright() as p:
     def launch():  # Edge on the Windows laptop, Chrome on a Mac, else Playwright's own Chromium
         for channel in ("msedge", "chrome", None):
             try:
-                return p.chromium.launch(**({"channel": channel} if channel else {}))
+                return p.chromium.launch(**({"channel": channel} if channel else {}), args=[
+                    "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"])  # a mic that beeps
             except Exception:
                 if channel is None:
                     raise
@@ -217,6 +233,27 @@ with sync_playwright() as p:
     health_ok = lights == ["Server:pill green", "Skriver:pill red", "Lokal modell:pill green"] \
         and page.inner_text("#msg") == "Skriver: svarer ikke"
 
+    # the handset: the indicator in the header, the offer to show the voice when it's lifted, the orb inline
+    page.wait_for_selector("#hook:not([hidden])")
+    hook_down = page.evaluate("() => !document.querySelector('#hook').classList.contains('up')")
+    hook_link.inbox.put(b"HOOK 1")
+    page.wait_for_selector("#hook.up")
+    page.wait_for_selector("#voiceoffer:not([hidden])")
+    page.click("#showvoice")
+    voice_src = page.get_attribute("#voicepanel iframe", "src")
+    page.click("#voicetoggle")  # and closed again: its stream stops
+    voice_closed = page.is_hidden("#voicepanel") and page.get_attribute("#voicepanel iframe", "src") == "about:blank"
+    hook_link.inbox.put(b"HOOK 0")
+    # the page's microphone: record, stop, the words go in the question box and are asked like typed ones
+    page.click("#mic")
+    page.wait_for_timeout(1500)
+    page.click("#mic")
+    # the first decoding imports PyAV, which on a fresh install takes a while (on the server it's long loaded)
+    page.wait_for_function("() => document.querySelector('#log .q')?.textContent === 'qr'", timeout=90000)
+    mic_ok = heard_audio and heard_audio[0] > 16000 * 0.5 and page.inner_text("#log .a").startswith("Kvittering")
+    voice_ok = hook_down and voice_src == "/orb" and voice_closed and mic_ok
+    print("handset", "down -> up, offered the voice, showed /orb, closed | mic", heard_audio, "->", page.inner_text("#log .a"))
+
     # the paper as a design surface: text, an icon and a photo on a blank sheet, moved, sized, turned, queued
     from PIL import Image as _Image
     snap = "() => design.items.map(it => ({type: it.type, x: Math.round(it.x), y: Math.round(it.y), w: Math.round(it.w), rot: Math.round(it.rot)}))"
@@ -290,6 +327,7 @@ assert short_h < full_h * 0.7 and ingredients_added >= 3
 print("filter", tag, "->", shown, "of", total)
 print("queue", labels, "->", "held, edited, kept on a failed print-all, then cleared")
 assert design_ok, "the paper's editor"
+assert voice_ok, "the handset indicator, the voice panel and the page's microphone"
 assert (tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and health_ok
         and empty_ok and queued_ok and order_kept and held_ok and edited_ok and kept_ok and cleared_ok
         and not other and len(asked_for) == 1)   # exactly one deliberate 500: "Skriv ut alt" with no printer

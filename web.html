@@ -26,6 +26,12 @@
   .cloud { width: 46px; height: 29px; display: block; fill: none; stroke: currentColor; stroke-width: 3.5;
            stroke-linejoin: round; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hook { margin-left: auto; display: inline-flex; color: var(--muted); }
+  .hook svg { width: 30px; height: 24px; fill: currentColor; }
+  .hook .up-i, .hook.up .down-i { display: none; }
+  .hook.up .up-i { display: block; }
+  .hook.up { color: var(--ok); }
+  .hook:not([hidden]) + .health { margin-left: 0; }
   .health { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
   .pill { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
           background: none; color: var(--muted); white-space: nowrap; cursor: pointer; }
@@ -87,6 +93,8 @@
   .stage .actions, .stage .printopts, .stage .editor, .stage #recipeactions, .stage .msg { max-width: 560px; margin-left: auto; margin-right: auto; }
   .printopts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
   .printopts label.check { grid-column: 1 / -1; }
+  .iconsel select { grid-column: 2 / -1; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+                    border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
   @media (max-width: 560px) { .printopts { grid-template-columns: 1fr; } }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
   h2 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
@@ -102,6 +110,13 @@
   #ask { display: flex; gap: 8px; align-items: stretch; }
   #ask textarea { flex: 1; min-height: 46px; }
   #ask button { flex: 0 0 auto; min-width: 84px; }
+  #ask .micbtn { min-width: 0; padding: 9px 12px; --lv: 0; box-shadow: 0 0 0 calc(var(--lv) * 7px) rgb(224 138 98 / .35); }
+  .micbtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; display: block; }
+  .micbtn.on { border-color: var(--accent); color: var(--accent); }
+  .voiceoffer { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px;
+                display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+  .voicepanel { margin-top: 12px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  .voicepanel iframe { display: block; width: 100%; height: 520px; border: 0; background: #0c0a08; }
   .help details { border-top: 1px solid var(--line); padding: 8px 0; font-size: 14px; }
   .help details:first-of-type { border-top: 0; padding-top: 0; }
   .help summary { cursor: pointer; font-weight: 600; }
@@ -230,6 +245,7 @@
 <header>
   <button class="panebtn" id="showsetup" aria-controls="setup" aria-expanded="true" title="Oppsett: daglige utskrifter, telefonen, køen">☰ Oppsett</button>
   <h1><svg class="cloud" viewBox="0 0 64 40" aria-hidden="true"><path d="M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z"/></svg><span class="sr">Weatherboy</span></h1>
+  <span class="hook" id="hook" hidden role="status" title="Røret"><svg class="down-i" viewBox="0 0 32 26" aria-hidden="true"><path d="M3 9.5C3 4 29 4 29 9.5V12h-6.5V9.6c-3.6-1.4-9.4-1.4-13 0V12H3z"/><path d="M9 14h14l4 10H5z"/></svg><svg class="up-i" viewBox="0 0 32 26" aria-hidden="true"><path transform="rotate(-28 16 7) translate(0 -3)" d="M3 9.5C3 4 29 4 29 9.5V12h-6.5V9.6c-3.6-1.4-9.4-1.4-13 0V12H3z"/><path d="M9 14h14l4 10H5z"/><path class="waves" d="M27 3.5c1.5 1 2.3 2.6 2.3 4.3M25.5 6c.7.5 1.1 1.2 1.1 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="sr" id="hooktext">Røret</span></span>
   <div class="health" id="health" role="status" aria-label="Status for delene av Weatherboy">
     <button class="pill">Server</button>
   </div>
@@ -287,12 +303,21 @@
       <h2>Spør Weatherboy</h2>
       <form id="ask">
         <textarea name="q" placeholder="Hvordan blir været i helgen? Har vi en oppskrift på fiskesuppe?"></textarea>
+        <button type="button" class="micbtn" id="mic" title="Snakk i stedet for å skrive: stopper selv når du tier" aria-label="Snakk"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg></button>
         <button class="primary">Spør</button>
       </form>
       <div class="row model">
         <label>Modell <select id="model"></select></label>
         <span id="spent"></span>
+        <label class="check" title="Nettleseren leser svaret høyt"><input type="checkbox" id="readaloud"> Les svaret høyt</label>
+        <button type="button" class="link" id="voicetoggle" aria-expanded="false" aria-controls="voicepanel">Vis stemmen</button>
       </div>
+      <div class="voiceoffer" id="voiceoffer" hidden role="status">
+        Røret er løftet. Vil du se samtalen her?
+        <button type="button" id="showvoice">Vis stemmen</button>
+        <button type="button" class="link" id="novoice">Nei takk</button>
+      </div>
+      <div class="voicepanel" id="voicepanel" hidden><iframe title="Stemmen: samtalen i røret"></iframe></div>
       <form class="row keyrow" id="keyform" hidden>
         <input type="password" id="apikey" placeholder="sk-ant-…  din egen Anthropic API-nøkkel" autocomplete="off" spellcheck="false">
         <button>Lagre nøkkel</button>
@@ -337,6 +362,8 @@
       <div class="printopts">
         <label class="slider" title="Lysere gir tynnere strek på tekst, mørkere gir fetere">Lysstyrke <input type="range" id="brightness" min="0.4" max="1.8" step="0.05" value="1"><output>1.00</output></label>
         <label class="slider">Kontrast <input type="range" id="contrast" min="0.5" max="2.5" step="0.05" value="1"><output>1.00</output></label>
+        <label class="slider iconsel" title="Ikonet øverst på kvitteringen">Ikon <select id="headicon">
+          <option value="">Automatisk</option></select></label>
         <label class="check" title="Ikonet og tidspunktet øverst på hver kvittering">
           <input type="checkbox" id="header" checked> Topplinje med ikon og tid</label>
       </div>
@@ -446,6 +473,14 @@
           enheten til du velger en annen kvittering.</p>
       </details>
       <details>
+        <summary>Snakk i stedet for å skrive</summary>
+        <p>Trykk på <b>mikrofonen</b> ved «Spør» og si spørsmålet. Den stopper selv når du har vært stille litt, eller
+          når du trykker igjen, og spør som om du hadde skrevet det. Mikrofonen virker over
+          <b>https://print.bastiankrohg.com</b> (ikke over den lokale adressen). Kryss av for <b>«Les svaret høyt»</b>
+          for å høre svaret. <b>«Vis stemmen»</b> viser samtalen i røret her, og løfter du røret mens siden er
+          åpen, spør den om du vil se den. Telefonen øverst til høyre viser om røret ligger på eller er løftet.</p>
+      </details>
+      <details>
         <summary>Røret: slik snakker du med Weatherboy</summary>
         <p>Løft røret, vent på summetonen og si hva du vil ha: «været i morgen», «tog fra Oslo S», eller et
           spørsmål. Kvitteringen skrives ut. Si <b>«ananas»</b> for å snakke med Weatherboy i stedet: da svarer den
@@ -512,6 +547,7 @@ async function receipt(path, body = null, type = null, print = false, queue = fa
   if (queue) params.set("queue", "1");
   for (const k of ["brightness", "contrast"]) if ($("#" + k).value !== "1") params.set(k, $("#" + k).value);
   if (!$("#header").checked) params.set("header", "0");
+  if ($("#headicon").value) params.set("icon", $("#headicon").value);
   const n = copies();
   if ((print || queue) && n > 1) params.set("copies", n);
   const url = params.size ? path + (path.includes("?") ? "&" : "?") + params : path;
@@ -1168,6 +1204,7 @@ async function askFlow(label, url, body) {
   try {
     const d = await aiPost(url, { ...body, rid: w.rid }).finally(w.stop);
     entry.querySelector(".a").textContent = d.answer;
+    readAloud(d.answer);
     entry.append(Object.assign(document.createElement("div"), { className: "cost", textContent: `≈ $${d.cost.toFixed(4)} · ${d.model}` }));
     showSpent(d.spent);
     const again = Object.assign(document.createElement("button"), { textContent: d.recipe ? "Vis oppskriften" : "Vis kvittering" });
@@ -1222,6 +1259,96 @@ async function loadPresets() {
     row.append(g);
   }
 }
+// ---- The voice, on the page ----------------------------------------------------------------------------------
+// The handset: a little phone in the header, on its cradle or lifted. Lifting it with the page open offers to show
+// the conversation here; "Vis stemmen" shows it any time (the orb page, inside the chat section).
+let hookWas = null;
+async function pollHook() {
+  if (document.hidden) return;
+  try {
+    const h = await (await fetch("/api/hook")).json();
+    $("#hook").hidden = !h.found;
+    $("#hook").classList.toggle("up", h.lifted);
+    $("#hook").title = $("#hooktext").textContent = h.lifted ? "Røret er løftet" : "Røret ligger på";
+    if (h.found && h.lifted && hookWas === false && $("#voicepanel").hidden) $("#voiceoffer").hidden = false;
+    if (!h.lifted) $("#voiceoffer").hidden = true;
+    hookWas = h.found ? h.lifted : null;
+  } catch {}
+}
+pollHook();
+setInterval(pollHook, 1500);
+function showVoice(open) {
+  const frame = $("#voicepanel iframe");
+  $("#voicepanel").hidden = !open;
+  $("#voiceoffer").hidden = true;
+  frame.src = open ? "/orb" : "about:blank";  // closed, its live stream stops too
+  $("#voicetoggle").textContent = open ? "Skjul stemmen" : "Vis stemmen";
+  $("#voicetoggle").setAttribute("aria-expanded", open);
+}
+$("#voicetoggle").onclick = () => showVoice($("#voicepanel").hidden);
+$("#showvoice").onclick = () => showVoice(true);
+$("#novoice").onclick = () => { $("#voiceoffer").hidden = true; };
+
+// Talking instead of typing: the browser records until you've been quiet for 2.5 s (or you press again), the
+// server turns it into words with the handset's own speech model, and it's asked like anything typed.
+let recording = null;
+$("#mic").onclick = async () => {
+  if (recording) return recording.stop();
+  if (!navigator.mediaDevices?.getUserMedia)
+    return say("Mikrofonen virker bare over https: bruk https://print.bastiankrohg.com.", true);
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { return say("Fikk ikke bruke mikrofonen. Sjekk at nettleseren har lov.", true); }
+  const chunks = [], rec = new MediaRecorder(stream);
+  recording = rec;
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const ac = new AudioContext(), meter = ac.createAnalyser();
+  ac.createMediaStreamSource(stream).connect(meter);
+  const buf = new Float32Array(meter.fftSize), t0 = performance.now();
+  let spoke = false, quietSince = t0;
+  const watch = setInterval(() => {
+    meter.getFloatTimeDomainData(buf);
+    const rms = Math.sqrt(buf.reduce((a, v) => a + v * v, 0) / buf.length);
+    $("#mic").style.setProperty("--lv", Math.min(1, rms * 12));
+    if (rms > .02) { spoke = true; quietSince = performance.now(); }
+    if ((spoke && performance.now() - quietSince > 2500) || performance.now() - t0 > 60000) rec.stop();
+  }, 100);
+  rec.onstop = async () => {
+    clearInterval(watch);
+    stream.getTracks().forEach(t => t.stop());
+    ac.close();
+    recording = null;
+    $("#mic").classList.remove("on");
+    $("#mic").style.setProperty("--lv", 0);
+    if (!spoke) return say("Jeg hørte ingenting.");
+    const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+    say("Tolker det du sa …");
+    try {
+      const r = await fetch("/api/listen", { method: "POST", body: blob, headers: { "Content-Type": blob.type } });
+      const d = await r.json().catch(() => ({ error: `Serveren svarte ikke ordentlig (HTTP ${r.status}).` }));
+      if (!r.ok) throw new Error(d.error);
+      if (!d.text) return say("Fant ingen ord i opptaket. Prøv igjen, litt nærmere mikrofonen.");
+      say("");
+      $("#ask textarea").value = d.text;
+      $("#ask").requestSubmit();
+    } catch (e) { say(e.message, true); }
+  };
+  rec.start(250);
+  $("#mic").classList.add("on");
+  say("Lytter … snakk, og vent litt når du er ferdig (eller trykk igjen).");
+};
+
+// Answers read aloud by the browser, in a Norwegian or English voice after what the answer looks like
+$("#readaloud").checked = localStorage.getItem("readaloud") === "1";
+$("#readaloud").onchange = () => localStorage.setItem("readaloud", $("#readaloud").checked ? "1" : "0");
+function readAloud(text) {
+  if (!$("#readaloud").checked || !window.speechSynthesis || !text) return;
+  speechSynthesis.cancel();
+  const said = new SpeechSynthesisUtterance(text.replace(/[#*`_]/g, ""));
+  said.lang = /\b(the|and|is|you|of)\b/i.test(text) && !/[æøå]/i.test(text) ? "en-GB" : "nb-NO";
+  speechSynthesis.speak(said);
+}
+
 // Wishes wait for the admin: on the page (with the admin key from .env, kept in this browser) or on GitHub
 const adminHeaders = () => ({ "Content-Type": "application/json", ...(localStorage.getItem("admin") ? { "X-Admin": localStorage.getItem("admin") } : {}) });
 async function loadWishes() {
@@ -1325,6 +1452,19 @@ $("#photo").onchange = ev => {
 $("#header").checked = localStorage.getItem("header") !== "0";
 $("#header").onchange = () => {
   localStorage.setItem("header", $("#header").checked ? "1" : "0");
+  $("#headicon").disabled = !$("#header").checked;
+  if (current) preview(current.path, current.body, current.type, current);
+};
+// ...and so is its icon: automatic (what the receipt is about) or one picked here
+const ICON_NAMES = { question: "Spørsmål", cooking: "Mat", cocktail: "Drink", weather: "Vær", transport: "Tog og buss",
+                     flight: "Fly", music: "Musikk", idea: "Idé", photo: "Kamera", shopping: "Handlenett", language: "Språk" };
+fetch("/api/icons").then(r => r.json()).then(names => {
+  for (const n of names) $("#headicon").append(Object.assign(document.createElement("option"), { value: n, textContent: ICON_NAMES[n] || n }));
+  $("#headicon").value = localStorage.getItem("headicon") || "";
+  $("#headicon").disabled = !$("#header").checked;
+}).catch(() => {});
+$("#headicon").onchange = () => {
+  localStorage.setItem("headicon", $("#headicon").value);
   if (current) preview(current.path, current.body, current.type, current);
 };
 

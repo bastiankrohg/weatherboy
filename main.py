@@ -97,7 +97,12 @@ def run_voice(a, password):
 
     if not a.text:
         import listen
-        stt = listen.transcriber(a.model, a.en_model, a.lang)
+        model_stt = listen.transcriber(a.model, a.en_model, a.lang)
+        web.STT = model_stt  # the page's microphone (/api/listen) uses the same model, loaded once
+
+        def stt(audio):  # one transcription at a time, the handset's or the page's
+            with web._stt_lock:
+                return model_stt(audio)
 
     def tone(t):
         if not a.text:

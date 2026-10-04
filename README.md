@@ -263,6 +263,10 @@ The receipt paper sits in the middle, with the question box above it and the rec
 
 **The paper is a design surface.** On top of whatever receipt is shown, or on a blank sheet, add text, the receipt icons (`/api/icons`), images and lines. Drag to move, the corner handle to resize, the round handle to rotate (it snaps to straight), double-click text to write in it. Arrow keys nudge, Delete removes, ↶ undoes. Everything is in printer dots, so the screen matches the print. "Skriv ut" and "Kø" draw it all into one 576-dot picture and send it through `/api/image`: dithered if there's a photo in it, crisp otherwise. The design is remembered on the device until another receipt is chosen (undo brings it back).
 
+**The voice on the page.** A little phone in the header shows whether the handset is lifted (`/api/hook`, from the board's heartbeats). Lifting it with the page open offers to show the conversation in the chat section ("Vis stemmen" shows the orb page there any time). The 🎙 button next to "Spør" records from the computer's or phone's microphone until it's quiet for 2.5 s, and `/api/listen` turns it into words with the handset's own speech model, loaded once and shared; then it's asked like typed text. Browsers only allow the microphone over https, so use print.bastiankrohg.com. "Les svaret høyt" has the browser read answers aloud.
+
+The header's icon can be picked under the paper ("Ikon"): automatic, or any of the receipt icons, for every print.
+
 ## Addresses at home
 
 All reserved on the router (http://192.168.0.1), so they stay put:

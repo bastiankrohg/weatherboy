@@ -82,7 +82,7 @@ def _canvas():
     return img, ImageDraw.Draw(img)
 
 
-HEADER = threading.local()  # HEADER.off: this thread's receipts skip the top line (the web page's switch)
+HEADER = threading.local()  # this thread's receipts (the web page's choices): .off skips the top line, .icon picks its icon
 
 
 def header_on():
@@ -95,6 +95,7 @@ def _header(d, when=None, label="WEATHERBOY", icon=None):
     small, x, y = font(SANS, 20), M, 64  # 8 mm above the first mark
     if not header_on():
         return y - 24
+    icon = getattr(HEADER, "icon", None) or icon  # an icon picked on the page wins, even over a text label
     if icon:
         ICONS.get(icon, ICONS["question"])(d, M, y - 8)
     for ch in "" if icon else label:
@@ -584,7 +585,7 @@ def photo(picture, when=None):
     img, d = _canvas()
     top = 72 if header_on() else 0
     if top:
-        camera(d, M, 24)
+        ICONS.get(getattr(HEADER, "icon", None) or "photo", camera)(d, M, 24)
         stamp = f"{when or datetime.now():%d.%m.%Y %H:%M}"
         d.text((DOTS - M - small.getlength(stamp), 30), stamp, font=small, fill=0)
     img.paste(picture, (0, top))

@@ -429,6 +429,14 @@ with_top, with_photo = layout.answer("hva?", "Et svar."), layout.photo(pic)
 layout.HEADER.off = True
 assert layout.answer("hva?", "Et svar.").height < with_top.height and layout.photo(pic).height == with_photo.height - 72
 layout.HEADER.off = False
+# ...and its icon, picked on the page (?icon=music): it replaces the automatic one, and a text label too
+band = lambda im: im.crop((0, 40, 576, 100)).tobytes()
+auto_answer, auto_art = band(layout.answer("hva?", "Et svar.", t0)), band(layout.maze(date(2026, 9, 30), t0))
+layout.HEADER.icon = "music"
+assert band(layout.answer("hva?", "Et svar.", t0)) == band(layout.answer("hva?", "Et svar.", t0, icon="music")) != auto_answer
+assert band(layout.maze(date(2026, 9, 30), t0)) != auto_art  # "DAGENS KUNST" gives way to the icon
+layout.HEADER.icon = None
+assert band(layout.answer("hva?", "Et svar.", t0)) == auto_answer
 
 # copies (?copies=3): each its own job, a preview prints none, and a typo can't empty the roll
 sent = []
@@ -968,6 +976,30 @@ link = phone.SerialLink.__new__(phone.SerialLink)
 link.ser = FakeSerial(b"HOOK 1\n" + cfg_line + b"HOOK 1\n")
 got = [next(link.lines()) for _ in range(3)]
 assert len(cfg_line) > 150 and got == [b"HOOK 1", cfg_line.strip(), b"HOOK 1"]  # whole lines, never "OK 1"
+hook = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/hook").read())
+assert hook == {"found": True, "lifted": True}  # the fake board said HOOK 1: the page's indicator shows it lifted
+# the page's microphone: browser audio, decoded and run through the handset's speech model
+import wave
+clip = io.BytesIO()
+with wave.open(clip, "wb") as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+    w.writeframes((np.sin(np.arange(16000) / 16000 * 2 * np.pi * 220) * 8000).astype("<i2").tobytes())
+def listen3(body):
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv3.server_port}/api/listen", body,
+                                                          {"Content-Type": "audio/wav"}, method="POST"))
+        return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+web.STT = None
+code, d = listen3(clip.getvalue())
+assert code == 503 and "røret" in d["error"]  # no handset loop on this server: says so
+heard_len = []
+web.STT = lambda audio: heard_len.append(len(audio)) or ("hvordan blir været", "no")
+code, d = listen3(clip.getvalue())
+assert code == 200 and d == {"text": "hvordan blir været", "lang": "no"} and 15000 < heard_len[0] < 17000  # 1 s at 16 kHz
+assert orb.log()[-1]["text"] == "hvordan blir været"  # in the voice's transcript too
+web.STT = None
 phone._shared.screen("think")  # the board's own "Tenker" screen, until done
 assert board.screen == "think"
 phone._shared.screen("done")

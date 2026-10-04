@@ -65,6 +65,13 @@
   .text .rule span { font-size: 11px; letter-spacing: .3em; }
   .text .typing span::after { content: "▌"; animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
+  /* short (inside the page's chat section): the orb and the transcript, without the scope and the meter */
+  @media (max-height: 640px) {
+    .row { display: none; }
+    .panel { gap: 8px; padding-top: 10px; padding-bottom: 12px; }
+    .text { height: 6.6em; }
+    .mode b { font-size: 22px; }
+  }
 </style>
 </head>
 <body>
