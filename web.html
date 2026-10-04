@@ -48,6 +48,13 @@
   #ask { display: flex; gap: 8px; align-items: stretch; }
   #ask textarea { flex: 1; min-height: 46px; }
   #ask button { flex: 0 0 auto; min-width: 84px; }
+  .help details { border-top: 1px solid var(--line); padding: 8px 0; font-size: 14px; }
+  .help details:first-of-type { border-top: 0; padding-top: 0; }
+  .help summary { cursor: pointer; font-weight: 600; }
+  .help p, .help ul { margin: 8px 0 2px; color: var(--muted); }
+  .help ul { padding-left: 18px; }
+  .help li { margin: 3px 0; }
+  .help b { color: var(--ink); font-weight: 600; }
   .espstate { margin: 0; font-size: 14px; color: var(--muted); }
   label.field { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; font-size: 14px;
                 color: var(--muted); margin-top: 8px; }
@@ -344,6 +351,38 @@
         </div>
       </form>
       <p class="msg" id="espmsg"></p>
+    </div>
+    <div class="card help">
+      <h2>Hjelp</h2>
+      <details>
+        <summary>Røret: slik snakker du med Weatherboy</summary>
+        <p>Løft røret, vent på summetonen og si hva du vil ha: «været i morgen», «tog fra Oslo S», eller et
+          spørsmål. Kvitteringen skrives ut. Si <b>«ananas»</b> for å snakke med Weatherboy i stedet: da svarer den
+          i røret. Si «ha det» eller legg på for å avslutte.</p>
+      </details>
+      <details>
+        <summary>Lyset på telefonen</summary>
+        <ul>
+          <li><b>Lyser:</b> røret er løftet.</li>
+          <li><b>Kort blink hvert 3. sekund:</b> røret ligger på, og alt er i orden.</li>
+          <li><b>To raske blink hvert 3. sekund:</b> røret ligger på, men telefonen er ikke på WiFi. Røret virker
+            likevel, over USB-kabelen.</li>
+          <li><b>Mørkt, ingen blink:</b> telefonen har ikke strøm, eller den er ikke i gang.</li>
+        </ul>
+      </details>
+      <details>
+        <summary>Skjermen på telefonen</summary>
+        <ul>
+          <li><b>Mørk:</b> røret ligger på.</li>
+          <li><b>En telefon med prikker:</b> røret er løftet, og Weatherboy lytter.</li>
+          <li><b>«Tenker» med prikker:</b> Weatherboy finner svaret, også om du har lagt på.</li>
+        </ul>
+      </details>
+      <details>
+        <summary>Lysene øverst</summary>
+        <p>Hver del av Weatherboy har sitt lys: <b>grønt</b> virker, <b>gult</b> virker delvis (for eksempel en
+          reserve), <b>rødt</b> virker ikke, <b>grått</b> er ikke satt opp. Trykk på et lys for å se hva det sier akkurat nå. De sjekkes på nytt av seg selv.</p>
+      </details>
     </div>
   </aside>
 </main>

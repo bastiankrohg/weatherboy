@@ -155,6 +155,8 @@ Ours now runs the Arduino sketch in [esp8266-phone-hook](https://github.com/bast
 
 **Screen:** a 0.96" 128×64 OLED (JMD0.96C, SSD1306 on I²C) on the same board: VCC to 3V3, GND to GND, SCL to D1, SDA to D2. Check the module's pin labels first, as some batches swap VCC and GND. The board draws it itself: dark while the handset is down, a phone with counting dots while it's lifted, and "Tenker" from when the voice loop has heard a question until the answer is in (`phone.screen("think")` / `"done"`), even if the handset goes down in between. More in the [esp8266-phone-hook README](https://github.com/bastiankrohg/esp8266-phone-hook#screen).
 
+**The LED** on the board shows the hook: lit while the handset is lifted. While it's down, a short blink every 3 seconds says the board is alive, and two quick blinks say its WiFi isn't connected (the handset still works then, over USB). No light and no blinking means the board has no power or isn't running. The page explains it too, under **Hjelp**.
+
 ```mermaid
 flowchart LR
     subgraph Base[F615 base]
