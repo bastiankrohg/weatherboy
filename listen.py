@@ -28,12 +28,23 @@ def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=Non
     pre = collections.deque(maxlen=5)  # 0.5 s pre-roll so the first syllable survives
     hiss = []
     buf, quiet, waited = [], 0.0, 0.0
+    recent = collections.deque(maxlen=20)  # the last 2 s of levels, for the log when it stops
+    db = lambda r: 20 * np.log10(max(r, 1e-6))
+
+    def stopped(why):  # one line in the log for every recording, so a handset that misbehaves shows how
+        lv = sorted(recent)
+        print(f"listen: {why} after {waited + len(buf) * BLOCK / RATE:.1f} s; "
+              + (f"speech for {len(buf) * BLOCK / RATE:.1f} s, " if buf else "speech never started, ")
+              + (f"last 2 s: typical {db(lv[len(lv) // 2]):.0f} dB, loudest {db(lv[-1]):.0f} dB, "
+                 f"speech above {db(threshold):.0f} dB" if lv else "no sound read"), flush=True)
     with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", device=device(mic), blocksize=BLOCK) as s:
         while True:
             x = s.read(BLOCK)[0][:, 0]
             if abort and abort():
+                stopped("hung up")
                 return None
             rms = float(np.sqrt(np.mean(x * x)))
+            recent.append(rms)
             if level:
                 level(rms)
             if len(hiss) < NOISE_BLOCKS:  # still learning the background: nobody counts as talking yet
@@ -43,19 +54,23 @@ def record(mic=None, threshold=0.02, silence=1.2, max_s=30, wait=None, abort=Non
                 if len(hiss) == NOISE_BLOCKS:
                     last_noise = float(np.median(hiss))
                     threshold = max(threshold, 3 * last_noise)
+                    print(f"listen: background {db(last_noise):.0f} dB, speech above {db(threshold):.0f} dB", flush=True)
                 continue
             loud = rms > threshold
             if not buf:
                 waited += BLOCK / RATE
                 if wait and waited > wait:
+                    stopped("nobody spoke")
                     return None
                 pre.append(x)
                 if loud:
                     buf = list(pre)
+                    print(f"listen: speech started ({db(rms):.0f} dB)", flush=True)
                 continue
             buf.append(x)
             quiet = 0.0 if loud else quiet + BLOCK / RATE
             if quiet >= silence or len(buf) * BLOCK / RATE >= max_s:
+                stopped("a pause" if quiet >= silence else f"the {max_s} s cap")
                 return np.concatenate(buf)
 
 
