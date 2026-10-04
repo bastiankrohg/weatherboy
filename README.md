@@ -377,6 +377,7 @@ flowchart TD
 | `--password` | `pineapple,ananas` | Starts a call. A party trick, not security |
 | `--volume` | `0.5` | Earpiece gain |
 | `--threshold` | `0.02` | RMS level that counts as speech |
+| `--pause` | `2.5` | Seconds of quiet that end what you said. Longer lets you stop and think mid-sentence, but every answer waits that long too |
 | `--mic` / `--speaker` | system default | Device index or part of its name |
 | `--phone` | off | Use the ESP hook switch (and LCD, once wired) in the F615 base |
 | `--phone-port` | first port that looks like an ESP | Serial port of the ESP8266, e.g. `COM5`. Only with `--phone` |

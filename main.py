@@ -33,6 +33,8 @@ def main():
     p.add_argument("--speaker", help="output device index or name substring; the handset earpiece")
     p.add_argument("--volume", type=float, default=0.5, help="earpiece gain, 0-1")
     p.add_argument("--threshold", type=float, default=0.02, help="RMS level that counts as speech")
+    p.add_argument("--pause", type=float, default=2.5,
+                   help="seconds of quiet that end what you said: longer lets you stop and think mid-sentence")
     p.add_argument("--model", default="NbAiLab/nb-whisper-small", help="Norwegian model (nb-whisper-base on a Pi)")
     p.add_argument("--en-model", default="small", help="English model: stock tiny/base/small/medium")
     p.add_argument("--lang", default="auto", choices=["auto", "no", "en"], help="auto picks per utterance")
@@ -126,7 +128,7 @@ def run_voice(a, password):
             return input("(call) " if chat else "? ").strip()
         orb.set("listen")
         show("I samtale" if chat else "Lytter...")
-        audio = listen.record(a.mic, a.threshold, wait=wait, abort=hung_up, level=orb.level)
+        audio = listen.record(a.mic, a.threshold, silence=a.pause, max_s=60, wait=wait, abort=hung_up, level=orb.level)
         if audio is None:
             return None
         orb.set("think")
