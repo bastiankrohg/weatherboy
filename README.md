@@ -257,6 +257,12 @@ curl -X POST https://print.bastiankrohg.com/api/voice -d '{"text": "hvordan blir
 
 The reply says what happened (`kind`: card, answer, call, hangup, print, ignored), with `say` for anything to speak back, `printed` for what went on paper, and `queued` for a receipt the printer wouldn't take. Inside a call (`"call": true`) answers are short and spoken instead of printed. The same home-only rule applies.
 
+## The page
+
+The receipt paper sits in the middle, with the question box above it and the receipt buttons and presets below. Setup (the daily prints, the phone base, the print queue) is in a pane on the left; shortcuts (the orb page, this README), the QR code, recipes, the shopping list, photos and help on the right. Both fold away from the header, and on narrower screens slide in over the page.
+
+**The paper is a design surface.** On top of whatever receipt is shown, or on a blank sheet, add text, the receipt icons (`/api/icons`), images and lines. Drag to move, the corner handle to resize, the round handle to rotate (it snaps to straight), double-click text to write in it. Arrow keys nudge, Delete removes, ↶ undoes. Everything is in printer dots, so the screen matches the print. "Skriv ut" and "Kø" draw it all into one 576-dot picture and send it through `/api/image`: dithered if there's a photo in it, crisp otherwise. The design is remembered on the device until another receipt is chosen (undo brings it back).
+
 ## Addresses at home
 
 All reserved on the router (http://192.168.0.1), so they stay put:

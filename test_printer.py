@@ -876,6 +876,17 @@ assert took is not None and 1.0 < took < 1.5, took  # what was said so far, not 
 blocks = iter(range(10_000))
 assert heard([0.001] * 40, 0.001, abort=lambda: next(blocks) > 15) is None  # hung up before saying anything
 
+# the receipt icons for the paper's editor: all of them, as black on transparent, and a 404-ish error for others
+names = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/icons").read())
+assert set(names) == set(layout.ICONS)
+ic = Image.open(io.BytesIO(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/icon/weather.png").read()))
+assert ic.mode == "LA" and ic.getpixel((0, 0))[1] == 0 and max(ic.getchannel("A").getdata()) == 255
+try:
+    urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/icon/nope.png")
+    raise AssertionError("served an icon that doesn't exist")
+except urllib.error.HTTPError as e:
+    assert e.code in (404, 500)
+
 # the voice's transcript for the orb page: both sides, repeats once, a line under each call
 import orb
 orb.FILE = Path(tempfile.mkdtemp()) / "samtale.json"  # never the real one

@@ -166,6 +166,18 @@ def log_tail(n):
         return [f"(no log at {LOG}: {e})\n"]
 
 
+def icon_png(name):
+    """A receipt icon as the printer draws it (about 40 dots), cropped to its ink: black lines on transparent,
+    so on the paper it sits on top of what's there instead of a white box. KeyError if unknown."""
+    from PIL import ImageDraw
+    img = Image.new("L", (120, 120), 255)
+    layout.ICONS[name](ImageDraw.Draw(img), 20, 20)
+    ink = ImageOps.invert(img)
+    x0, y0, x1, y1 = ink.getbbox()
+    ink = ink.crop((x0 - 2, y0 - 2, x1 + 2, y1 + 2))
+    return Image.merge("LA", (Image.new("L", ink.size, 0), ink))
+
+
 def watched(d, run):
     """Run a question with its steps recorded under the id the page sent (d["rid"]), and a deadline the model has
     to answer by, so the page can show what's happening and nobody waits forever."""
@@ -559,6 +571,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "Bare admin kan lese loggen."}, 403)
             n = min(int(parse_qs(urlparse(self.path).query).get("lines", ["200"])[0]), 2000)
             self.reply(200, "".join(log_tail(n)).encode(), "text/plain; charset=utf-8")
+        elif path == "/api/icons":  # the receipt icons, for the paper's editor
+            self.json(list(layout.ICONS))
+        elif path.startswith("/api/icon/") and path.endswith(".png"):
+            buf = io.BytesIO()
+            icon_png(path[len("/api/icon/"):-len(".png")]).save(buf, "PNG")
+            self.reply(200, buf.getvalue(), "image/png", [("Cache-Control", "max-age=86400")])
         elif path == "/api/progress":  # what a question (by the id the page sent with it) is doing right now
             self.json(progress.get(parse_qs(urlparse(self.path).query).get("id", [""])[0]))
         elif path == "/api/version":  # which commit this server runs: after a push, has the old Mac pulled it yet?

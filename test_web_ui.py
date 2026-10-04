@@ -217,6 +217,57 @@ with sync_playwright() as p:
     health_ok = lights == ["Server:pill green", "Skriver:pill red", "Lokal modell:pill green"] \
         and page.inner_text("#msg") == "Skriver: svarer ikke"
 
+    # the paper as a design surface: text, an icon and a photo on a blank sheet, moved, sized, turned, queued
+    from PIL import Image as _Image
+    snap = "() => design.items.map(it => ({type: it.type, x: Math.round(it.x), y: Math.round(it.y), w: Math.round(it.w), rot: Math.round(it.rot)}))"
+    page.click("#blanksheet")
+    page.click("#addtext")
+    page.keyboard.type("Hei fra testen")
+    page.click("#sheet", position={"x": 5, "y": 5})  # click off: the text is kept
+    typed = page.evaluate("() => design.items[0].text")
+    page.click("#addicon")
+    page.locator("#iconpicker button").first.click()
+    icon = page.locator(".item.icon")
+    b = icon.bounding_box()
+    page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+    page.mouse.down(); page.mouse.move(b["x"] + b["width"] / 2 + 60, b["y"] + b["height"] / 2 + 40, steps=5); page.mouse.up()
+    moved = page.evaluate(snap)[1]
+    h = page.locator(".item.icon .h-scale").bounding_box()
+    page.mouse.move(h["x"] + 6, h["y"] + 6); page.mouse.down()
+    page.mouse.move(h["x"] + 60, h["y"] + 60, steps=5); page.mouse.up()
+    bigger = page.evaluate(snap)[1]
+    r = page.locator(".item.icon .h-rot").bounding_box()
+    c = page.locator(".item.icon").bounding_box()
+    page.mouse.move(r["x"] + 6, r["y"] + 6); page.mouse.down()
+    page.mouse.move(c["x"] + c["width"] / 2 + 200, c["y"] + c["height"] / 2, steps=8); page.mouse.up()  # to its right: 90°
+    turned = page.evaluate(snap)[1]
+    pic = Path(tempfile.mkdtemp()) / "foto.png"
+    _Image.linear_gradient("L").resize((800, 400)).save(pic)
+    page.set_input_files("#addimage", str(pic))
+    page.wait_for_function("() => design.items.length === 3")
+    page.keyboard.press("Delete")  # the photo, just added and selected
+    after_delete = page.evaluate("() => design.items.length")
+    page.click("#designundo")
+    restored = page.evaluate("() => design.items.map(it => it.type)")
+    page.click("#ko")
+    for _ in range(50):  # until the job is in the queue (the list on the page can show other lines meanwhile)
+        job = json.loads(page.evaluate("async () => JSON.stringify((await (await fetch('/api/queue')).json()).items)"))
+        if job:
+            break
+        page.wait_for_timeout(100)
+    printed = _Image.open(printq.png_path(job[0]["id"])).convert("L")
+    ink_top = printed.crop((0, 0, 576, 200)).point(lambda v: 255 if v < 128 else 0).getbbox()
+    page.reload()
+    page.wait_for_function("() => design.items.length === 3")
+    kept = page.evaluate("() => design.items.map(it => it.type)")
+    page.evaluate("() => document.querySelector('#blanksheet').click()")
+    design_ok = (typed == "Hei fra testen" and moved["x"] > 40 and bigger["w"] > moved["w"] * 1.3
+                 and 80 <= turned["rot"] <= 100 and after_delete == 2 and restored == ["text", "icon", "image"]
+                 and job[0]["label"] == "bilde" and printed.width == 576 and ink_top is not None
+                 and kept == ["text", "icon", "image"])
+    print("design", typed, "| icon moved", moved, "-> bigger", bigger["w"], "-> turned", turned["rot"],
+          "| queued", job[0]["label"], printed.size, "| kept after reload", kept)
+
     # blank sheet
     page.click("#blank")
     blank = page.eval_on_selector("#canvas", "c => [c.width, c.height]")
@@ -238,6 +289,7 @@ print("full", full_h, "-> short card", short_h, "px high | ingredients added", i
 assert short_h < full_h * 0.7 and ingredients_added >= 3
 print("filter", tag, "->", shown, "of", total)
 print("queue", labels, "->", "held, edited, kept on a failed print-all, then cleared")
+assert design_ok, "the paper's editor"
 assert (tool == "pen" and text_ok and shop_ok and filter_ok and preset_ok and daily_ok and health_ok
         and empty_ok and queued_ok and order_kept and held_ok and edited_ok and kept_ok and cleared_ok
         and not other and len(asked_for) == 1)   # exactly one deliberate 500: "Skriv ut alt" with no printer

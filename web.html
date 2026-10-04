@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40'%3E%3Cpath d='M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z' fill='%23fff' stroke='%23211e1a' stroke-width='3.5' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
+    --paperfont: system-ui, -apple-system, "Segoe UI", sans-serif;  /* text on the paper: the same on screen and print */
     --bg: #efeae1; --card: #fbf8f2; --ink: #211e1a; --muted: #736b5f; --line: #ddd5c7;
     --accent: #9c3f1d; --ok: #3f7a3a; --bad: #a2322a; --paper: #ffffff;
   }
@@ -60,7 +61,29 @@
   .links small { display: block; color: var(--muted); font-size: 13px; }
   /* the paper lies on a desk, like a page in a design tool */
   .stage { background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / 18px 18px, var(--card); padding: 28px 16px 16px; }
-  .stage .paper { width: min(100%, 400px); margin: 0 auto; }
+  .stage .sheet { position: relative; width: min(100%, 400px); margin: 0 auto; }
+  .stage .paper { width: 100%; }
+  .sheet:has(.paper[hidden]) .layer { display: none; }  /* the old editor (✎) works on the receipt alone */
+  .layer { position: absolute; inset: 0; overflow: visible; }
+  .item { position: absolute; transform-origin: 50% 50%; cursor: move; touch-action: none; user-select: none; }
+  .item.text { white-space: pre; color: #000; line-height: 1.2; font-family: var(--paperfont); padding: 0 1px; }
+  .item.text[contenteditable="true"] { cursor: text; user-select: text; outline: 1px dashed var(--accent); }
+  .item.line { background: #000; }
+  .item img { width: 100%; height: 100%; display: block; pointer-events: none; image-rendering: pixelated; }
+  .item.image img { image-rendering: auto; }
+  .item.sel { outline: 1px solid var(--accent); outline-offset: 2px; }
+  .item .h-scale, .item .h-rot { position: absolute; width: 12px; height: 12px; background: var(--card);
+                                 border: 2px solid var(--accent); }
+  .item .h-scale { right: -9px; bottom: -9px; cursor: nwse-resize; border-radius: 2px; }
+  .item .h-rot { left: calc(50% - 6px); top: -26px; border-radius: 50%; cursor: grab; }
+  .designbar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: -12px auto 14px; max-width: 640px; }
+  .designbar button, .designbar .file { font-size: 14px; padding: 6px 10px; }
+  .designbar #seltools { display: contents; }
+  .designbar #seltools[hidden] { display: none; }
+  .iconpicker { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 420px; margin: -6px auto 14px;
+                background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .iconpicker button { background: #fff; padding: 6px; border-radius: 6px; line-height: 0; }
+  .iconpicker img { height: 26px; image-rendering: pixelated; }
   .stage .actions, .stage .printopts, .stage .editor, .stage #recipeactions, .stage .msg { max-width: 560px; margin-left: auto; margin-right: auto; }
   .printopts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
   .printopts label.check { grid-column: 1 / -1; }
@@ -281,7 +304,27 @@
     </div>
     <div class="card stage">
       <h2 class="sr">Forhåndsvisning</h2>
-      <div class="paper" id="paper"><p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk.</p></div>
+      <div class="designbar" role="toolbar" aria-label="Legg til på papiret">
+        <button id="addtext" title="En tekst du kan skrive i og flytte">+ Tekst</button>
+        <button id="addicon" aria-haspopup="true" aria-expanded="false" title="Et av kvitteringenes ikoner">+ Ikon</button>
+        <label class="file" title="Et bilde: det blir prikket som et foto når det skrives ut">+ Bilde<input type="file" id="addimage" accept="image/*"></label>
+        <button id="addline" title="En strek, for å dele opp">+ Strek</button>
+        <span id="seltools" hidden>
+          <button id="smaller" title="Mindre" aria-label="Mindre">A−</button>
+          <button id="bigger" title="Større" aria-label="Større">A+</button>
+          <button id="boldbtn" title="Fet skrift" aria-label="Fet" aria-pressed="false"><b>B</b></button>
+          <button id="forward" title="Legg øverst" aria-label="Legg øverst">⤒</button>
+          <button id="backward" title="Legg nederst" aria-label="Legg nederst">⤓</button>
+          <button id="remove" title="Fjern (Delete)">Fjern</button>
+        </span>
+        <button id="designundo" title="Angre" aria-label="Angre" disabled>↶</button>
+        <button id="blanksheet" title="Start på et tomt ark">Tomt ark</button>
+      </div>
+      <div class="iconpicker" id="iconpicker" hidden></div>
+      <div class="sheet" id="sheet">
+        <div class="paper" id="paper"><p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk. Eller legg til tekst, ikoner og bilder over.</p></div>
+        <div class="layer" id="layer" aria-label="Det du har lagt til på papiret"></div>
+      </div>
       <div class="actions">
         <label class="copies" title="Hvor mange eksemplarer: hver blir en egen lapp">
           <span class="sr">Antall</span><input type="number" id="copies" min="1" max="20" value="1" inputmode="numeric">×</label>
@@ -321,7 +364,7 @@
         <button id="shortlong">Kort versjon</button>
         <button id="toshop">Legg ingrediensene i handlelisten</button>
         <label class="check" id="photowrap" hidden title="Bildet av retten, over hele bredden under tittelen">
-          <input type="checkbox" id="photo" checked> Med bilde</label>
+          <input type="checkbox" id="recipephoto" checked> Med bilde</label>
       </div>
       <p class="msg" id="msg"></p>
     </div>
@@ -394,6 +437,14 @@
     </div>
     <div class="card help">
       <h2>Hjelp</h2>
+      <details>
+        <summary>Papiret: lag din egen lapp</summary>
+        <p>Over papiret legger du til <b>tekst</b>, <b>ikoner</b>, <b>bilder</b> og <b>streker</b>, oppå kvitteringen
+          som vises, eller på et <b>tomt ark</b>. Dra for å flytte, dra i hjørnet for å endre størrelsen, og i den
+          runde prikken for å rotere. Dobbeltklikk på en tekst for å skrive i den. Piltastene flytter litt,
+          Delete fjerner, og ↶ angrer. «Skriv ut» og «Kø» tar med alt du har lagt til. Lappen huskes på denne
+          enheten til du velger en annen kvittering.</p>
+      </details>
       <details>
         <summary>Røret: slik snakker du med Weatherboy</summary>
         <p>Løft røret, vent på summetonen og si hva du vil ha: «været i morgen», «tog fra Oslo S», eller et
@@ -493,6 +544,9 @@ async function preview(path, body = null, type = null, extra = {}) {
     await img.decode();
     $("#paper").innerHTML = "";
     $("#paper").append(img);
+    // the editor builds on it; new content starts a fresh design (undo brings the old one back), but the same
+    // content re-rendered (a slider, the header switch) keeps what was added on top
+    await designBase(img, !(before && before.path === path && before.body === body));
     $("#print").disabled = $("#edit").disabled = $("#ko").disabled = false;
     say("");
     recipeActions();
@@ -508,11 +562,11 @@ $("#print").onclick = async () => {
   const n = copies();
   say(n > 1 ? `Skriver ut ${n} stk …` : "Skriver ut …");
   try {
-    const r = await receipt(current.path, current.body, current.type, true);
+    const r = await send(true);
     if (r.queued) { say(`Lagt i køen: ${r.why}.`); loadQueue(); }
     else {
       say(n > 1 ? `Skrevet ut ${n} stk ✓` : "Skrevet ut ✓");
-      if (current.kind === "shopping") loadShop();  // the server marked them "printet"
+      if (current?.kind === "shopping") loadShop();  // the server marked them "printet"
     }
   } catch (e) { say(e.message, true); }
   $("#print").disabled = false;
@@ -522,7 +576,7 @@ $("#print").onclick = async () => {
 $("#ko").onclick = async () => {
   $("#ko").disabled = true;
   try {
-    const r = await receipt(current.path, current.body, current.type, false, true);
+    const r = await send(false, true);
     const n = copies();
     say(r.queued ? (n > 1 ? `${n} stk lagt i køen.` : "Lagt i køen.") + " Den går ut så snart skriveren tar imot." : r.why, !r.queued);
     if (r.queued) loadQueue();
@@ -530,6 +584,294 @@ $("#ko").onclick = async () => {
   $("#ko").disabled = false;
   refreshStatus();
 };
+
+// What "Skriv ut" and "Kø" send: the receipt as it is, or with what was added on top of it, drawn into one picture
+async function send(print, queue = false) {
+  if (!design.items.length) return receipt(current.path, current.body, current.type, print, queue);
+  const blob = await composeDesign();
+  const dither = design.items.some(it => it.type === "image") ? 1 : 0;  // photos get dotted; text and icons stay crisp
+  return receipt(`/api/image?dither=${dither}`, blob, "image/png", print, queue);
+}
+
+// ---- The paper as a design surface: text, icons, images and lines on top of the receipt -----------------------
+// Each item lives in printer dots (576 across), so the screen and the print agree whatever size the paper is shown.
+const DOTS = 576, BLANK_H = 640;
+const design = { base: null, baseH: 0, items: [], sel: null };  // base: the receipt under it, as a data URL
+const undoStack = [];
+let writing = null, nextId = 1;  // the text item being typed into
+const k = () => $("#paper").clientWidth / DOTS;
+const byId = id => design.items.find(it => it.id === id);
+const PAPERFONT = getComputedStyle(document.documentElement).getPropertyValue("--paperfont");
+const font = (it, scale) => `${it.bold ? 700 : 400} ${it.size * scale}px ${PAPERFONT}`;
+
+function remember() {  // on this device, so a reload doesn't lose the design
+  try { localStorage.setItem("design", JSON.stringify({ base: design.base, baseH: design.baseH, items: design.items })); }
+  catch { /* full: images are big; the design still works, it just won't survive a reload */ }
+}
+function checkpoint() {
+  undoStack.push(JSON.stringify({ base: design.base, baseH: design.baseH, items: design.items }));
+  if (undoStack.length > 60) undoStack.shift();
+  $("#designundo").disabled = false;
+}
+$("#designundo").onclick = () => {
+  if (!undoStack.length) return;
+  Object.assign(design, JSON.parse(undoStack.pop()), { sel: null });
+  $("#designundo").disabled = !undoStack.length;
+  showBase(); drawLayer(); remember();
+};
+
+const asDataURL = blob => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); });
+async function designBase(img, fresh) {
+  if (fresh && design.items.length) checkpoint();
+  design.base = await asDataURL(await (await fetch(img.src)).blob());
+  design.baseH = img.naturalHeight * DOTS / img.naturalWidth;
+  if (fresh) { design.items = []; design.sel = null; }
+  drawLayer(); remember();
+}
+function showBase() {  // the paper under the items: the receipt, or a blank sheet
+  const paper = $("#paper");
+  paper.innerHTML = "";
+  if (design.base) paper.append(Object.assign(new Image(), { src: design.base, alt: "Kvitteringen under" }));
+  else if (!design.items.length) paper.innerHTML = '<p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk. Eller legg til tekst, ikoner og bilder over.</p>';
+}
+function paperHeight() {  // the receipt, stretched to fit whatever was put below it
+  let h = design.base ? design.baseH : (design.items.length ? BLANK_H : 0);
+  for (const it of design.items) h = Math.max(h, it.y + Math.max(it.w, it.h) + 24);
+  return h;
+}
+
+function place(el, it) {
+  const s = k();
+  el.style.left = it.x * s + "px";
+  el.style.top = it.y * s + "px";
+  el.style.transform = `rotate(${it.rot || 0}deg)`;
+  if (it.type === "text") {
+    el.style.font = font(it, s);
+    it.w = el.offsetWidth / s; it.h = el.offsetHeight / s;  // text sizes itself; the print needs to know how big
+  } else {
+    el.style.width = it.w * s + "px";
+    el.style.height = it.h * s + "px";
+  }
+}
+function drawLayer() {
+  const layer = $("#layer"), s = k();
+  layer.innerHTML = "";
+  for (const it of design.items) {
+    const el = Object.assign(document.createElement("div"), { className: `item ${it.type}` + (it.id === design.sel ? " sel" : "") });
+    el.dataset.id = it.id;
+    if (it.type === "text") el.textContent = it.text;
+    else if (it.type !== "line") el.append(Object.assign(new Image(), { src: it.src, alt: "", draggable: false }));
+    layer.append(el);
+    place(el, it);
+    if (it.id === design.sel) el.append(Object.assign(document.createElement("i"), { className: "h-scale", title: "Dra for å endre størrelsen" }),
+                                       Object.assign(document.createElement("i"), { className: "h-rot", title: "Dra for å rotere" }));
+  }
+  $("#paper").style.minHeight = paperHeight() * s + "px";
+  const sel = byId(design.sel);
+  $("#seltools").hidden = !sel;
+  $("#boldbtn").hidden = !sel || sel.type !== "text";
+  $("#boldbtn").setAttribute("aria-pressed", !!sel?.bold);
+  const any = design.items.length > 0;
+  if (any) $("#print").disabled = $("#ko").disabled = false;
+  else if (!current) $("#print").disabled = $("#ko").disabled = true;
+  if (!design.base && $("#paper .empty") && any) $("#paper").innerHTML = "";
+}
+
+function add(it) {
+  checkpoint();
+  const s = k(), sheet = $("#sheet").getBoundingClientRect();
+  // somewhere you can see it: the middle of the paper, or of the part of it on screen
+  const top = Math.max(0, -sheet.top / s) + Math.min(window.innerHeight, sheet.height) / s / 3;
+  Object.assign(it, { id: nextId++, rot: 0, x: it.x ?? (DOTS - (it.w || 200)) / 2, y: it.y ?? Math.min(top, paperHeight() || 200) });
+  design.items.push(it);
+  design.sel = it.id;
+  if (!design.base) showBase();
+  drawLayer(); remember();
+  return it;
+}
+$("#addtext").onclick = () => {
+  const it = add({ type: "text", text: "Skriv her", size: 40, bold: false });
+  startEditing($(`.item[data-id="${it.id}"]`), it, true);
+};
+$("#addline").onclick = () => add({ type: "line", w: 480, h: 4, x: 48 });
+$("#blanksheet").onclick = () => {
+  if (design.base || design.items.length) checkpoint();
+  Object.assign(design, { base: null, baseH: 0, items: [], sel: null });
+  current = null;
+  showBase(); drawLayer(); remember();
+  $("#edit").disabled = true;
+  recipeActions();
+  say("Et tomt ark: legg til tekst, ikoner og bilder.");
+};
+$("#addicon").onclick = async () => {
+  const picker = $("#iconpicker");
+  picker.hidden = !picker.hidden;
+  $("#addicon").setAttribute("aria-expanded", !picker.hidden);
+  if (picker.hidden || picker.childElementCount) return;
+  for (const name of await (await fetch("/api/icons")).json()) {
+    const b = Object.assign(document.createElement("button"), { title: name, ariaLabel: name });
+    b.append(Object.assign(new Image(), { src: `/api/icon/${name}.png`, alt: "" }));
+    b.onclick = async () => {
+      const blob = await (await fetch(`/api/icon/${name}.png`)).blob();
+      const img = Object.assign(new Image(), { src: URL.createObjectURL(blob) });
+      await img.decode();
+      const scale = 3;  // icons are ~40 dots: start them bigger, they stay crisp (pixel by pixel)
+      add({ type: "icon", name, src: await asDataURL(blob), w: img.naturalWidth * scale, h: img.naturalHeight * scale });
+      picker.hidden = true; $("#addicon").setAttribute("aria-expanded", false);
+    };
+    picker.append(b);
+  }
+};
+$("#addimage").onchange = async ev => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  const img = Object.assign(new Image(), { src: URL.createObjectURL(file) });
+  try { await img.decode(); } catch { return say("Kunne ikke lese bildet.", true); }
+  const w = Math.min(img.naturalWidth, DOTS), h = img.naturalHeight * w / img.naturalWidth;  // never more dots than print
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  c.getContext("2d").drawImage(img, 0, 0, w, h);
+  const shown = Math.min(w, 360);
+  add({ type: "image", src: c.toDataURL("image/jpeg", .88), w: shown, h: h * shown / w });
+};
+
+$("#bigger").onclick = () => resize(1.15);
+$("#smaller").onclick = () => resize(1 / 1.15);
+function resize(f) {
+  const it = byId(design.sel);
+  if (!it) return;
+  checkpoint();
+  const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+  if (it.type === "text") it.size = Math.max(10, it.size * f);
+  else if (it.type === "line") it.w = Math.max(20, it.w * f);
+  else { it.w *= f; it.h *= f; }
+  drawLayer();  // text measures itself here
+  it.x = cx - it.w / 2; it.y = cy - it.h / 2;
+  drawLayer(); remember();
+}
+$("#boldbtn").onclick = () => { const it = byId(design.sel); if (!it) return; checkpoint(); it.bold = !it.bold; drawLayer(); remember(); };
+$("#forward").onclick = () => restack(true);
+$("#backward").onclick = () => restack(false);
+function restack(top) {
+  const it = byId(design.sel);
+  if (!it) return;
+  checkpoint();
+  design.items = design.items.filter(x => x !== it);
+  top ? design.items.push(it) : design.items.unshift(it);
+  drawLayer(); remember();
+}
+$("#remove").onclick = removeSelected;
+function removeSelected() {
+  if (!design.sel) return;
+  checkpoint();
+  design.items = design.items.filter(it => it.id !== design.sel);
+  design.sel = null;
+  if (!design.base && !design.items.length) showBase();
+  drawLayer(); remember();
+}
+
+function startEditing(el, it, selectAll = false) {  // text: written straight on the paper
+  writing = it;
+  el.contentEditable = "true";
+  el.focus();
+  if (selectAll) document.getSelection().selectAllChildren(el);
+  el.onblur = () => {
+    el.contentEditable = "false";
+    const text = el.innerText.replace(/\n$/, "");
+    writing = null;
+    if (text.trim() !== it.text) { checkpoint(); it.text = text.trim() || "…"; }
+    drawLayer(); remember();
+  };
+}
+$("#layer").addEventListener("dblclick", e => {
+  const el = e.target.closest(".item.text");
+  if (el) startEditing(el, byId(+el.dataset.id));
+});
+
+// Moving, sizing and turning, with the mouse or a finger
+$("#layer").addEventListener("pointerdown", e => {
+  const el = e.target.closest(".item");
+  if (!el || el.isContentEditable) return;
+  const it = byId(+el.dataset.id);
+  if (design.sel !== it.id) { design.sel = it.id; drawLayer(); }
+  const live = $(`.item[data-id="${it.id}"]`);
+  const mode = e.target.classList.contains("h-scale") ? "scale" : e.target.classList.contains("h-rot") ? "rot" : "move";
+  const s = k(), start = { ...it }, x0 = e.clientX, y0 = e.clientY;
+  const box = live.getBoundingClientRect(), cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+  const d0 = Math.max(4, Math.hypot(x0 - cx, y0 - cy));
+  let moved = false;
+  live.setPointerCapture(e.pointerId);
+  live.onpointermove = m => {
+    if (!moved) { checkpoint(); moved = true; }
+    if (mode === "move") {
+      it.x = start.x + (m.clientX - x0) / s;
+      it.y = Math.max(0, start.y + (m.clientY - y0) / s);
+    } else if (mode === "scale") {  // around the middle, so it grows where it stands
+      const f = Math.max(.1, Math.hypot(m.clientX - cx, m.clientY - cy) / d0);
+      if (it.type === "text") it.size = Math.max(10, start.size * f);
+      else if (it.type === "line") it.w = Math.max(20, start.w * f);
+      else { it.w = start.w * f; it.h = start.h * f; }
+      place(live, it);
+      it.x = start.x + (start.w - it.w) / 2; it.y = start.y + (start.h - it.h) / 2;
+    } else {
+      let a = Math.atan2(m.clientY - cy, m.clientX - cx) * 180 / Math.PI + 90;
+      for (const snap of [0, 90, 180, -90, 270]) if (Math.abs(a - snap) < 4) a = snap;  // straight is easy to hit
+      it.rot = a;
+    }
+    place(live, it);
+  };
+  live.onpointerup = () => {
+    live.onpointermove = live.onpointerup = null;
+    if (moved) { drawLayer(); remember(); }
+  };
+});
+$("#sheet").addEventListener("pointerdown", e => {  // a click on the paper itself lets go of the selection
+  if (!e.target.closest(".item") && design.sel) { design.sel = null; drawLayer(); }
+});
+document.addEventListener("keydown", e => {
+  if (!design.sel || writing || e.target.closest("input, textarea, select, [contenteditable=true]")) return;
+  const it = byId(design.sel), step = e.shiftKey ? 20 : 2;
+  const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeSelected(); }
+  else if (e.key === "Escape") { design.sel = null; drawLayer(); }
+  else if (nudge) { e.preventDefault(); checkpoint(); it.x += nudge[0]; it.y = Math.max(0, it.y + nudge[1]); drawLayer(); remember(); }
+});
+addEventListener("resize", () => drawLayer());
+
+// The design as one picture, 576 dots across: the receipt, then each item in order, as the screen shows them
+async function composeDesign() {
+  const H = Math.ceil(paperHeight());
+  const c = Object.assign(document.createElement("canvas"), { width: DOTS, height: H }), g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, DOTS, H);
+  const load = src => { const i = new Image(); i.src = src; return i.decode().then(() => i); };
+  if (design.base) g.drawImage(await load(design.base), 0, 0, DOTS, design.baseH);
+  for (const it of design.items) {
+    g.save();
+    g.translate(it.x + it.w / 2, it.y + it.h / 2);
+    g.rotate((it.rot || 0) * Math.PI / 180);
+    if (it.type === "text") {
+      g.fillStyle = "#000"; g.font = font(it, 1); g.textBaseline = "top";
+      it.text.split("\n").forEach((line, i) => g.fillText(line, -it.w / 2 + 1, -it.h / 2 + i * it.size * 1.2 + it.size * .1));
+    } else if (it.type === "line") {
+      g.fillStyle = "#000"; g.fillRect(-it.w / 2, -it.h / 2, it.w, it.h);
+    } else {
+      g.imageSmoothingEnabled = it.type === "image";  // icons stay pixel-sharp
+      g.drawImage(await load(it.src), -it.w / 2, -it.h / 2, it.w, it.h);
+    }
+    g.restore();
+  }
+  return new Promise(ok => c.toBlob(ok, "image/png"));
+}
+
+// Back where it was after a reload
+try {
+  const saved = JSON.parse(localStorage.getItem("design") || "null");
+  if (saved && (saved.base || saved.items?.length)) {
+    Object.assign(design, saved, { sel: null });
+    nextId = Math.max(0, ...design.items.map(it => it.id)) + 1;
+    showBase(); drawLayer();
+  }
+} catch {}
 
 // The editor: every receipt is an image. The pencil fetches the receipt's grayscale original (?raw=1) into a
 // canvas; crop, rotation and drawing happen here; "Bruk endringene" sends the result to /api/image, which then
@@ -699,7 +1041,7 @@ $("#done").onclick = () => {
 };
 // What /api/text gets for a preview; a recipe from the collection brings its name, and its photo if it's ticked
 const textBody = o => JSON.stringify({ q: o.q, a: o.a, icon: o.icon, kind: o.kind, ids: o.ids, recipe: o.recipe,
-                                       photo: !!o.hasPhoto && $("#photo").checked });
+                                       photo: !!o.hasPhoto && $("#recipephoto").checked });
 $("#apply").onclick = () => {
   const a = $("#edittext").value;
   const { q, icon, recipe, kind, ids, hasPhoto } = current, o = { q, a, icon, recipe, kind, ids, hasPhoto };
@@ -729,9 +1071,9 @@ $("#shortlong").onclick = () => {
   preview("/api/text", textBody(o), "application/json", o);
 };
 // With or without the photo is a standing choice, remembered on this device
-$("#photo").checked = localStorage.getItem("photo") !== "0";
-$("#photo").onchange = () => {
-  localStorage.setItem("photo", $("#photo").checked ? "1" : "0");
+$("#recipephoto").checked = localStorage.getItem("photo") !== "0";
+$("#recipephoto").onchange = () => {
+  localStorage.setItem("photo", $("#recipephoto").checked ? "1" : "0");
   if (current?.hasPhoto) preview("/api/text", textBody(current), "application/json", current);
 };
 $("#toshop").onclick = async () => {
