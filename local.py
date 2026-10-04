@@ -12,6 +12,12 @@ import requests
 SERVERS = [u.strip() for u in os.environ.get("WEATHERBOY_LOCAL_URLS",
                                              "http://robotlab:11434/v1,http://localhost:11434/v1").split(",") if u.strip()]
 MODEL = os.environ.get("WEATHERBOY_LOCAL_MODEL", "qwen3:8b")  # needs tool calling; best of robotlab's in tests
+# for a server behind gate.py (published through a tunnel): sent as a bearer token, the OpenAI way
+KEY = os.environ.get("WEATHERBOY_LOCAL_KEY", "")
+
+
+def headers():
+    return {"Authorization": f"Bearer {KEY}"} if KEY else {}
 LOCAL = ("\nYou run on a small local model, so don't trust your memory for facts, news, results or anything "
          "that changes: call web_search first (and web_fetch to read a result), then answer from what you found. "
          "Never write that you will search; just call the tool. Keep tool calls few. Write correct, natural "
@@ -22,7 +28,7 @@ def server():
     """The first server that answers, or None."""
     for url in SERVERS:
         try:
-            requests.get(url.rstrip("/") + "/models", timeout=2).raise_for_status()
+            requests.get(url.rstrip("/") + "/models", headers=headers(), timeout=5).raise_for_status()
             return url
         except requests.RequestException:
             pass
@@ -40,7 +46,7 @@ def chat(system, messages, tools, model=MODEL):
                                                "parameters": t.input_schema}} for t in tools]
     by_name = {t.name: t for t in tools}
     for _ in range(8):  # a few rounds of tool calls, then it has to answer
-        r = requests.post(url.rstrip("/") + "/chat/completions", timeout=300, json={
+        r = requests.post(url.rstrip("/") + "/chat/completions", headers=headers(), timeout=300, json={
             "model": model, "tools": specs, "messages": [{"role": "system", "content": system + LOCAL}] + messages})
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]

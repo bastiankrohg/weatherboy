@@ -1,0 +1,11 @@
+# weatherboy-ollama: Ollama on this Mac, for the old MacBook - and only what weatherboy uses.
+# gate.py (127.0.0.1:11435) checks the key and the model; this file lets only these two paths reach it.
+tunnel: <the weatherboy-ollama tunnel id>
+credentials-file: /Users/bastiankrohg/.cloudflared/<that id>.json
+no-autoupdate: true
+
+ingress:
+  - hostname: ollama.bastiankrohg.com
+    path: ^/v1/(models|chat/completions)$
+    service: http://127.0.0.1:11435
+  - service: http_status:404

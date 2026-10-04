@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Deploys by itself (old Mac): every 2 minutes update.sh pulls main from GitHub if it has moved, and
+     restarts the server. Log: ~/weatherboy-update.log -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.weatherboy.update</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>/Users/Bastian/torggata/weatherboy/deploy/macos/update.sh</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>120</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/Bastian/weatherboy-update.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/Bastian/weatherboy-update.log</string>
+</dict>
+</plist>

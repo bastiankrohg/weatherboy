@@ -317,7 +317,7 @@ def check_local():
     """The free model: green on the first server (the desktop), yellow on a fallback or without the model pulled."""
     for i, url in enumerate(local.SERVERS):
         try:
-            r = requests.get(url.rstrip("/") + "/models", timeout=2)
+            r = requests.get(url.rstrip("/") + "/models", headers=local.headers(), timeout=5)
             r.raise_for_status()
         except requests.RequestException:
             continue

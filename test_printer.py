@@ -531,6 +531,33 @@ try:
 except RuntimeError as e:
     assert "svarer ikke" in str(e)
 agent.set_model("claude-haiku-4-5")
+# the gate in front of a published Ollama: the same conversation gets through with the key, nothing else does
+import gate
+gate.KEY, gate.MODELS, gate.OLLAMA = "nøkkel-123", {local.MODEL}, f"http://127.0.0.1:{fake.server_port}"
+gated = ThreadingHTTPServer(("127.0.0.1", 0), gate.Gate)
+threading.Thread(target=gated.serve_forever, daemon=True).start()
+local.SERVERS, local.KEY = [f"http://127.0.0.1:{gated.server_port}/v1"], "nøkkel-123"
+agent.set_model("local")
+answer, _ = agent.ask("Hvilke oppskrifter har vi?")
+assert "negroni" in answer  # through the gate, tools and all
+def gate_call(method, path, body=None, key="nøkkel-123"):
+    h = {"Content-Type": "application/json"} | ({"Authorization": f"Bearer {key}"} if key else {})
+    req = urllib.request.Request(f"http://127.0.0.1:{gated.server_port}{path}",
+                                 json.dumps(body).encode() if body is not None else None, h, method=method)
+    try:
+        return urllib.request.urlopen(req).status
+    except urllib.error.HTTPError as e:
+        return e.code
+assert gate_call("GET", "/v1/models") == 200
+assert gate_call("GET", "/v1/models", key=None) == 401 and gate_call("GET", "/v1/models", key="gjett") == 401
+assert gate_call("POST", "/api/pull", {"model": "llama3"}) == 404  # Ollama's own API: not through here
+assert gate_call("GET", "/api/tags") == 404 and gate_call("DELETE", "/api/delete") == 405
+assert gate_call("POST", "/v1/chat/completions", {"model": "llama3:70b", "messages": []}) == 403  # only ours
+gate.KEY = ""
+assert gate_call("GET", "/v1/models") == 401  # no key set up on the gate: nobody gets in
+gated.shutdown()
+local.KEY = ""
+agent.set_model("claude-haiku-4-5")
 fake.shutdown()
 
 # the router: one transcript in, one decision out, the same for the handset and /api/voice

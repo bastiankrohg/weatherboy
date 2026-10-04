@@ -306,15 +306,33 @@ sudo pmset -a sleep 0 disksleep 0 autorestart 1 womp 1   # never sleep; power ba
 
 LaunchAgents only run while you're logged in. After a restart, either log in once, or turn on automatic login (System Preferences → Users & Groups → Login Options; FileVault must be off).
 
+### Deploying: push, and the old Mac pulls
+
+[deploy/macos/update.sh](deploy/macos/update.sh) runs every 2 minutes on the old Mac (`com.weatherboy.update`): if `main` on GitHub has moved, it pulls, syncs the dependencies and restarts the server. So develop and test on another machine, push, and it's live a couple of minutes later; `~/weatherboy-update.log` says when. Nothing has to reach into the old Mac for this. It only fast-forwards: if something was changed on the old Mac itself, it leaves it alone and says so in the log.
+
+```sh
+cp deploy/macos/com.weatherboy.update.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.weatherboy.update.plist
+```
+
 ### The local model, from the MacBook Air for now
 
-robotlab is only reachable over Tailscale, which needs macOS 12, so for now the old Mac asks Ollama on the MacBook Air. In the old Mac's `.env`:
+robotlab is only reachable over Tailscale, which needs macOS 12, and the router keeps WiFi devices apart, so the old Mac reaches Ollama on the MacBook Air through a second Cloudflare tunnel, `ollama.bastiankrohg.com`. It lets through as little as it can:
+
+- **Ollama listens on the Air only** (`127.0.0.1`), not on whatever network the Air is on.
+- **[gate.py](gate.py) sits in front:** only `GET /v1/models` and `POST /v1/chat/completions`, only with the key, only for weatherboy's model. Pulling, deleting or loading models and Ollama's own API never reach it.
+- **The tunnel only forwards those two paths** ([deploy/macos/ollama.yml](deploy/macos/ollama.yml)); anything else is a 404 at Cloudflare.
+
+In the old Mac's `.env`, and the same `WEATHERBOY_LOCAL_KEY` in the Air's `.env` (for the gate):
 
 ```
-WEATHERBOY_LOCAL_URLS=http://Bastians-macbook-air.local:11434/v1,http://192.168.0.6:11434/v1
+WEATHERBOY_LOCAL_URLS=https://ollama.bastiankrohg.com/v1
+WEATHERBOY_LOCAL_KEY=<a long random string>
 ```
 
-On the Air, [deploy/macos/com.weatherboy.ollama.plist](deploy/macos/com.weatherboy.ollama.plist) runs the Ollama app's server as a background service, listening on the network (`OLLAMA_HOST=0.0.0.0`), with `qwen3:8b` pulled (`ollama pull qwen3:8b`). Ollama has no login of its own: on the home network that's fine, but on someone else's WiFi anyone there could use it. To keep the Air awake on the charger: System Settings → Battery → Options → "Prevent automatic sleeping on power adapter when the display is off". It still sleeps when the lid is closed.
+On the Air, three background services: [com.weatherboy.ollama](deploy/macos/com.weatherboy.ollama.plist) (the Ollama app's server, `qwen3:8b` pulled), [com.weatherboy.gate](deploy/macos/com.weatherboy.gate.plist) and [com.weatherboy.ollama-tunnel](deploy/macos/com.weatherboy.ollama-tunnel.plist). The tunnel was made with `cloudflared tunnel create weatherboy-ollama`, then `cloudflared tunnel --config ~/.cloudflared/ollama.yml route dns --overwrite-dns <its id> ollama.bastiankrohg.com`. Pass `--config`: without it, cloudflared routes the name to the tunnel named in `config.yml` (the old Mac's) instead. Cloudflare gives up on a request after 100 s, which a single model answer stays well under.
+
+To keep the Air awake on the charger: System Settings → Battery → Options → "Prevent automatic sleeping on power adapter when the display is off". It still sleeps when the lid is closed, and then the old Mac has no model.
 
 ## Setup
 

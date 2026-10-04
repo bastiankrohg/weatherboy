@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- gate.py: lets only weatherboy's requests (with the key from .env) through to Ollama, for the ollama tunnel.
+     Starts at login and again if it stops. Logs: ~/Library/Logs/weatherboy-gate.log -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.weatherboy.gate</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/bastiankrohg/torggata/weatherboy</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/bastiankrohg/torggata/weatherboy/.venv/bin/python</string>
+		<string>gate.py</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/bastiankrohg/Library/Logs/weatherboy-gate.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/bastiankrohg/Library/Logs/weatherboy-gate.log</string>
+</dict>
+</plist>

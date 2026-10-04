@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Ollama for weatherboy: the local model, served to the old MacBook on the home network.
+<!-- Ollama for weatherboy: the local model, on this Mac only - gate.py and its tunnel publish what weatherboy needs.
      Starts at login and again if it stops. Remove with:
      launchctl bootout gui/$(id -u)/com.weatherboy.ollama && rm ~/Library/LaunchAgents/com.weatherboy.ollama.plist -->
 <plist version="1.0">
@@ -15,7 +15,7 @@
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>OLLAMA_HOST</key>
-		<string>0.0.0.0:11434</string>
+		<string>127.0.0.1:11434</string>
 		<key>OLLAMA_KEEP_ALIVE</key>
 		<string>30m</string>
 	</dict>
