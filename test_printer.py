@@ -927,7 +927,7 @@ code, _, out = ask3("/api/ask", {"q": "hei", "model": "local"})
 assert code == 504 and json.loads(out) == {"error": progress.TOO_SLOW, "timeout": True}
 agent.ask = lambda q, voice=False, use=None, api_key=None, deadline=None: calls_made.append((q, use, api_key)) or ("tema: idea\nJa.", 0.0)
 web.LOG = Path(tempfile.mkdtemp()) / "weatherboy.log"
-web.LOG.write_text("".join(f"line {i}\n" for i in range(500)), encoding="utf-8")
+web.LOG.write_text("".join(f"line {i}\n" for i in range(500)), encoding="utf-8", newline="\n")  # not \r\n on Windows
 def get3(path, admin=None):
     h = {"CF-Connecting-IP": "84.214.212.9"} | ({"X-Admin": admin} if admin else {})
     try:

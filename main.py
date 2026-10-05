@@ -3,6 +3,7 @@
     python main.py --text                          type instead of talking; PNG previews land in out/
     python main.py --mic USB --speaker USB --printer 192.168.0.108 --phone
     python phone.py                                ESP8266 hook switch over the USB cable, + LCD bring-up
+    python screen.py                               the round touch screen: every animation, prints taps
     http://<this machine>:8615                     web page: all receipts, Claude, recipes, photos
     python main.py --gui                           ...and the voice as an orb in a window on this machine
     python listen.py USB                           live mic level, to pick --threshold
@@ -43,6 +44,8 @@ def main():
     p.add_argument("--phone", action="store_true",
                    help="the ESP in the F615: listen only while off hook (ESP8266 over USB, ESP32 over WiFi)")
     p.add_argument("--phone-port", help="serial port of the ESP8266 (default: the first that looks like an ESP)")
+    p.add_argument("--screen", nargs="?", const="auto", metavar="PORT",
+                   help="the round ESP32-S3 touch screen over USB: what it's doing; a tap stops it talking")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
     p.add_argument("--gui", action="store_true", help="show the voice as an orb in a window (the page at /orb)")
     p.add_argument("--tunnel", help="also run this Cloudflare tunnel for the web page, e.g. weatherboy")
@@ -74,6 +77,11 @@ def run_voice(a, password):
         import phone as esp
         phone = esp.shared(a.phone_port)  # the web page's ESP card talks to the same board
         print(f"phone: {phone.link.where}")
+    glass = None  # the round touch screen; it follows the orb by itself
+    if a.screen:
+        import screen as round_screen
+        glass = round_screen.Screen(None if a.screen == "auto" else a.screen, follow=True)
+        print(f"screen: {glass.where}")
 
     def hung_up():
         return bool(phone) and not a.text and not phone.lifted()
@@ -110,7 +118,9 @@ def run_voice(a, password):
 
     def say(text):
         orb.set("speak", said=text)
-        speak.say(text, a.speaker, a.volume, abort=hung_up, level=orb.level)
+        taps = glass.taps if glass else 0  # a tap on the round screen stops it mid-sentence
+        speak.say(text, a.speaker, a.volume, abort=lambda: hung_up() or bool(glass) and glass.taps != taps,
+                  level=orb.level)
 
     def out(img, label="kvittering"):
         """The same funnel the web page uses: rendered once, printed if the printer takes it, and kept in
@@ -170,6 +180,8 @@ def run_voice(a, password):
             print(f"> {q}" + (f"   [{cmd}]" if cmd else ""))
             show("Tenker..." if not cmd or cmd == "chat" else cmd.capitalize(), q)
             r = router.route(q, web.CARDS, call=chat, password=password)  # same rules as /api/voice
+            if glass and "image" in r and r["image"].info.get("weather"):
+                glass.weather(r["image"].info["weather"])  # icon, temperature and wind on the round screen
             if "image" in r:
                 out(r["image"], label=cmd if cmd and cmd != "chat" else (r.get("cmd") or "kvittering"))
             screen("done")  # the answer is in: whatever is said aloud now, the thinking is over

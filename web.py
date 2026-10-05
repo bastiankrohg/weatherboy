@@ -93,7 +93,10 @@ def _weather(place=None, when=None):
     """The forecast, for the place nlp worked out or the configured one, over the time it worked out.
     Both are None when nothing was said, which is the same receipt the page's own button gets."""
     lat, lon = (place.lat, place.lon) if place else (agent.LAT, agent.LON)
-    return layout.weather(place.name if place else agent.PLACE, agent.forecast(lat, lon, _hours(when)), _at(when))
+    fc = agent.forecast(lat, lon, _hours(when))
+    img = layout.weather(place.name if place else agent.PLACE, fc, _at(when))
+    img.info["weather"] = fc[0] if fc else None  # the first hour, for the round screen's icon
+    return img
 
 
 def _departures(stop=None, mode=None, when=None):

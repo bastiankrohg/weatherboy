@@ -97,7 +97,7 @@ def forecast(lat=LAT, lon=LON, hours=24):
     for t in r.json()["properties"]["timeseries"][:hours]:
         now, nxt = t["data"]["instant"]["details"], t["data"].get("next_1_hours", {})
         out.append({"time": datetime.fromisoformat(t["time"].replace("Z", "+00:00")).astimezone(),
-                    "temp": now["air_temperature"], "wind": now["wind_speed"],
+                    "temp": now["air_temperature"], "wind": now["wind_speed"], "from": now.get("wind_from_direction"),
                     "symbol": nxt.get("summary", {}).get("symbol_code", ""),
                     "rain": nxt.get("details", {}).get("precipitation_amount", 0.0)})
     return out
