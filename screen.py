@@ -21,6 +21,7 @@ import threading
 import time
 
 ESPRESSIF = 0x303A
+STALE = 10  # seconds without a HOOK heartbeat before the screen's hook switch is ignored
 STATES = ("idle", "listen", "think", "speak", "print", "error")
 DAYS = "mandag tirsdag onsdag torsdag fredag lørdag søndag".split()
 WORDS = {"idle", "print", "error"}  # the only states that show text; the rest is just the orb
@@ -34,6 +35,7 @@ def guess_port():
 class Screen:
     def __init__(self, port=None, follow=False):
         self.port, self.ser, self.tried, self.taps, self.sent = port, None, 0.0, 0, 0.0
+        self.up, self.seen = True, 0.0  # the hook switch on GPIO44, if one is wired (main.py --hook screen)
         self._wlock = threading.Lock()  # the follow thread and main.py's weather write at the same time
         self._open()
         if follow:
@@ -60,9 +62,9 @@ class Screen:
             time.sleep(1 / fps)
 
     def _open(self):
-        import serial
         self.tried = time.time()
         try:
+            import serial  # the phone extra; without it there's simply no screen
             port = self.port or guess_port()
             if not port:
                 return
@@ -73,23 +75,39 @@ class Screen:
             self.ser = s
             threading.Thread(target=self._listen, args=(s,), daemon=True).start()
         except Exception as e:  # noqa: BLE001 - no screen is fine
-            print(f"screen: {e}")
+            if str(e) != getattr(self, "_said", None):  # once, not every 5 s while it stays away
+                self._said = str(e)
+                print(f"screen: {e}")
 
     def _listen(self, s):
         try:
             while self.ser is s:
-                if s.readline().strip() == b"TAP":
+                line = s.readline().strip()
+                if line == b"TAP":
                     self.taps += 1
+                elif line in (b"HOOK 0", b"HOOK 1"):
+                    self.up, self.seen = line == b"HOOK 1", time.time()
         except Exception:  # noqa: BLE001 - unplugged; _write notices and reopens
             pass
+
+    def lifted(self):
+        """The handset is up, by the switch on the screen's board. A screen that's unplugged or hasn't reported
+        for STALE seconds counts as lifted: the mic stays on, as with no hook switch at all, rather than off."""
+        self._reopen()  # waiting on the hook may be the only thing still talking to it
+        return self.up or time.time() - self.seen > STALE
 
     @property
     def where(self):
         return self.ser.port if self.ser else "not found"
 
+    def _reopen(self):
+        """Unplugged earlier: try the port again, every 5 s at most. One caller at a time."""
+        with self._wlock:
+            if not self.ser and time.time() - self.tried > 5:
+                self._open()
+
     def _write(self, line):
-        if not self.ser and time.time() - self.tried > 5:
-            self._open()
+        self._reopen()
         with self._wlock:
             if self.ser:
                 try:

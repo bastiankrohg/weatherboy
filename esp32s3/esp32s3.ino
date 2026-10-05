@@ -21,6 +21,11 @@
 #define SCL 10
 #define EXPANDER 0x20  // TCA9554: EXIO1 = touch reset, EXIO2 = LCD reset
 #define TOUCH 0x53
+// The F615's hook switch, optional: between GPIO44 (RXD on the board's header, free since we talk over the
+// USB port) and GND. Reported like the ESP8266 base: "HOOK 1"/"HOOK 0" on every change and every 2 s.
+// Nothing wired reads as lifted (the pull-up), so the host only listens to it with main.py --hook screen.
+#define HOOK_PIN 44
+#define OFF_HOOK_LEVEL 1  // 1: the handset resting closes the switch to GND. Flip if lifting reads "on hook".
 #define C 206          // centre of the 412x412 glass
 #define R 206
 
@@ -380,6 +385,7 @@ void setup() {
   gfx->setUTF8Print(true);  // æøå arrive as UTF-8; without this each prints as two junk glyphs
   orbSetup();
   pinMode(TP_INT, INPUT_PULLUP);
+  pinMode(HOOK_PIN, INPUT_PULLUP);
   ledcAttach(BL, 5000, 8);
   ledcWrite(BL, 200);        // ponytail: fixed brightness; dim at night if it ever bothers anyone
   Serial.println("WEATHERBOY SCREEN");
@@ -399,6 +405,14 @@ void loop() {
     bool now = touched();
     if (was && !now) Serial.println("TAP");  // on lift-off, like a button
     was = now;
+  }
+  static int hook = -1, raw = -1;
+  static uint32_t rawSince = 0, sent = 0;
+  int r = digitalRead(HOOK_PIN) == OFF_HOOK_LEVEL;
+  if (r != raw) raw = r, rawSince = millis();
+  if (millis() - rawSince > 30 && (raw != hook || millis() - sent > 2000)) {  // debounced; and a heartbeat
+    hook = raw, sent = millis();
+    Serial.println(hook ? "HOOK 1" : "HOOK 0");
   }
   frame();
 }

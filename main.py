@@ -46,6 +46,9 @@ def main():
     p.add_argument("--phone-port", help="serial port of the ESP8266 (default: the first that looks like an ESP)")
     p.add_argument("--screen", nargs="?", const="auto", metavar="PORT",
                    help="the round ESP32-S3 touch screen over USB: what it's doing; a tap stops it talking")
+    p.add_argument("--hook", choices=["phone", "screen"], default="phone",
+                   help="whose hook switch counts: the ESP8266 base (--phone) or the one wired to the round screen "
+                        "(GPIO44; implies --screen). An unplugged screen then just means always listening")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
     p.add_argument("--gui", action="store_true", help="show the voice as an orb in a window (the page at /orb)")
     p.add_argument("--tunnel", help="also run this Cloudflare tunnel for the web page, e.g. weatherboy")
@@ -78,13 +81,17 @@ def run_voice(a, password):
         phone = esp.shared(a.phone_port)  # the web page's ESP card talks to the same board
         print(f"phone: {phone.link.where}")
     glass = None  # the round touch screen; it follows the orb by itself
-    if a.screen:
+    if a.screen or a.hook == "screen":
         import screen as round_screen
-        glass = round_screen.Screen(None if a.screen == "auto" else a.screen, follow=True)
+        glass = round_screen.Screen(None if a.screen in (None, "auto") else a.screen, follow=True)
         print(f"screen: {glass.where}")
 
     def hung_up():
-        return bool(phone) and not a.text and not phone.lifted()
+        if a.text:
+            return False
+        if a.hook == "screen":
+            return not glass.lifted()
+        return bool(phone) and not phone.lifted()
 
     def show(title, text=""):
         orb.set(label=title)
