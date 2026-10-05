@@ -24,6 +24,14 @@
 		<string>USB</string>
 		<string>--speaker</string>
 		<string>USB</string>
+		<!-- the base models: 2-3x faster than small on this old CPU, a little less sure of words.
+		     Back to small: drop these four lines. A shorter pause answers sooner after you stop. -->
+		<string>--model</string>
+		<string>NbAiLab/nb-whisper-base</string>
+		<string>--en-model</string>
+		<string>base</string>
+		<string>--pause</string>
+		<string>1.5</string>
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>
