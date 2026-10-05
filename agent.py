@@ -4,7 +4,7 @@ import math
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -88,13 +88,18 @@ For a recipe, give a short overview (what it is, how long it takes, the main ing
 walk through it; when walking through, give one step at a time and wait for "neste" or "next"."""
 
 
-def forecast(lat=LAT, lon=LON, hours=24):
-    """MET Norway hourly forecast, times converted to this machine's local time."""
+def forecast(lat=LAT, lon=LON, hours=24, start=None):
+    """MET Norway hourly forecast, times converted to this machine's local time: `hours` of it from `start`
+    (an aware datetime; None is now). Past about 60 hours MET only has every sixth hour."""
     r = requests.get("https://api.met.no/weatherapi/locationforecast/2.0/compact",
                      params={"lat": round(lat, 4), "lon": round(lon, 4)}, headers=MET, timeout=10)
     r.raise_for_status()
     out = []
-    for t in r.json()["properties"]["timeseries"][:hours]:
+    series = r.json()["properties"]["timeseries"]
+    if start:  # the hour that contains start, and on from there
+        series = [t for t in series
+                  if datetime.fromisoformat(t["time"].replace("Z", "+00:00")) + timedelta(hours=1) > start]
+    for t in series[:hours]:
         now, nxt = t["data"]["instant"]["details"], t["data"].get("next_1_hours", {})
         out.append({"time": datetime.fromisoformat(t["time"].replace("Z", "+00:00")).astimezone(),
                     "temp": now["air_temperature"], "wind": now["wind_speed"], "from": now.get("wind_from_direction"),
@@ -127,24 +132,33 @@ def weather(lat: float, lon: float, hours: int = 12) -> str:
                      for h in forecast(lat, lon, min(hours, 48)))
 
 
-def calls(stop=STOPS[0][0], count=8, mode=STOPS[0][1]):
-    """Entur real-time departures: (stop name, [departure dicts]), only `mode` (e.g. "rail") if given.
-    Raises LookupError for an unknown stop."""
+def calls(stop=STOPS[0][0], count=8, mode=STOPS[0][1], start=None):
+    """Entur real-time departures: (stop name, [departure dicts]), only `mode` (e.g. "rail") if given, and
+    from `start` (an aware datetime) if given, else from now. Raises LookupError for an unknown stop."""
     r = requests.get("https://api.entur.io/geocoder/v1/autocomplete",
                      params={"text": stop, "layers": "venue", "size": 1}, headers=ENTUR, timeout=10)
     r.raise_for_status()
     hits = r.json()["features"]
     if not hits:
         raise LookupError(f"No stop found for {stop!r}.")
-    q = """query($id: String!, $n: Int!, $modes: [TransportMode]) { stopPlace(id: $id) { name
-      estimatedCalls(numberOfDepartures: $n, whiteListedModes: $modes) { expectedDepartureTime realtime
+    # startTime only when there is one: Entur's server fails on an explicit null (2026-10)
+    q = """query($id: String!, $n: Int!, $modes: [TransportMode]%s) { stopPlace(id: $id) { name
+      estimatedCalls(numberOfDepartures: $n, whiteListedModes: $modes%s) {
+        expectedDepartureTime realtime
         destinationDisplay { frontText } quay { publicCode }
-        serviceJourney { line { publicCode transportMode } } } } }"""
+        serviceJourney { line { publicCode transportMode } } } } }""" % (
+        (", $start: DateTime", ", startTime: $start") if start else ("", ""))
+    variables = {"id": hits[0]["properties"]["id"], "n": count, "modes": [mode] if mode else None}
+    if start:
+        variables["start"] = start.isoformat()
     r = requests.post("https://api.entur.io/journey-planner/v3/graphql", headers=ENTUR, timeout=10,
-                      json={"query": q, "variables": {"id": hits[0]["properties"]["id"], "n": count,
-                                                      "modes": [mode] if mode else None}})
+                      json={"query": q, "variables": variables})
     r.raise_for_status()
-    sp = r.json()["data"]["stopPlace"]
+    sp = (r.json().get("data") or {}).get("stopPlace")
+    if not sp:
+        raise LookupError(f"Entur has no departures for {stop!r}: {r.json().get('errors')}")
+    if mode and not sp["estimatedCalls"]:  # "trikken fra Jakob kirke" at a bus-only stop: show what does stop
+        return calls(stop, count, None, start)
     return sp["name"], [{"time": datetime.fromisoformat(c["expectedDepartureTime"]), "realtime": c["realtime"],
                          "mode": c["serviceJourney"]["line"]["transportMode"],
                          "line": c["serviceJourney"]["line"]["publicCode"],

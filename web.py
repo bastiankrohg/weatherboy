@@ -84,6 +84,12 @@ def _at(when):
     return when.start if when else None
 
 
+def _from(when):
+    """Where the data should start: the asked time if it's still ahead ("i morgen", "kl 18"), else now (None).
+    "I kveld" asked at 22:30 starts at 18:00, which is gone: the board from now is what's meant."""
+    return when.start if when and when.start > datetime.now().astimezone() else None
+
+
 def _hours(when, default=24):
     """How much forecast a receipt asked for a time needs: 'i kveld' is 7 hours, 'i morgen' is 18."""
     return default if not when else max(1, min(48, round((when.end - when.start).total_seconds() / 3600)))
@@ -93,7 +99,7 @@ def _weather(place=None, when=None):
     """The forecast, for the place nlp worked out or the configured one, over the time it worked out.
     Both are None when nothing was said, which is the same receipt the page's own button gets."""
     lat, lon = (place.lat, place.lon) if place else (agent.LAT, agent.LON)
-    fc = agent.forecast(lat, lon, _hours(when))
+    fc = agent.forecast(lat, lon, _hours(when), _from(when))
     img = layout.weather(place.name if place else agent.PLACE, fc, _at(when))
     img.info["weather"] = fc[0] if fc else None  # the first hour, for the round screen's icon
     return img
@@ -105,7 +111,7 @@ def _departures(stop=None, mode=None, when=None):
     at all is every mode - a stop configured without one, or an utterance that didn't say, still gets all."""
     if stop is None:  # nothing heard at all: the default board, with whatever the default mode is
         stop, mode = agent.STOPS[0][0], agent.STOPS[0][1]
-    return layout.departures(*agent.calls(stop, 10, mode), _at(when))
+    return layout.departures(*agent.calls(stop, 10, mode, _from(when)), _at(when))
 
 
 def _flights(place=None, when=None):

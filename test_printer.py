@@ -663,8 +663,9 @@ real = {(m, k): getattr(m, k) for m, k in ((agent, "forecast"), (agent, "calls")
                                            (web, "word_card"), (nlp, "match"), (nlp, "geocode"), (nlp, "geocode_stop"))}
 nlp.geocode = lambda name, capitalized=False: nlp.Place("Røros", 62.19, 10.44)
 nlp.geocode_stop = lambda name: "Røros stasjon" if name.startswith("røros") else None
-agent.forecast = lambda lat, lon, hours: seen.update(lat=lat, lon=lon, hours=hours) or []
-agent.calls = lambda stop, count, mode: seen.update(stop=stop, count=count, mode=mode) or (stop, [])
+agent.forecast = lambda lat, lon, hours, start=None: seen.update(lat=lat, lon=lon, hours=hours, start=start) or []
+agent.calls = lambda stop, count, mode, start=None: seen.update(stop=stop, count=count, mode=mode, start=start) \
+    or (stop, [])
 agent.aircraft = lambda lat, lon, radius_km=30: []
 layout.weather = lambda place, fc, when=None: seen.update(place=place, stamp=when) or layout.lcd(place, w=576)
 layout.departures = lambda stop, deps, when=None: seen.update(place=stop, stamp=when) or layout.lcd(stop, w=576)
@@ -677,11 +678,15 @@ r = router.route("hva blir været i Røros i morgen", web.CARDS)
 assert r["kind"] == "card" and r["cmd"] == "weather" and r["image"].width == 576 and len(asked) == n
 assert (seen["lat"], seen["lon"], seen["hours"]) == (62.19, 10.44, 18)  # Røros, tomorrow 06:00-24:00
 assert seen["place"] == "Røros" and seen["stamp"].day != datetime.now().day  # ...and it's stamped
+assert seen["start"] == seen["stamp"]  # ...and the forecast starts tomorrow, not now
 
 n = len(asked)
 r = router.route("tog fra Røros", web.CARDS)  # a stop and a mode out of four words
 assert r["kind"] == "card" and r["cmd"] == "departures" and len(asked) == n
 assert seen["stop"] == "Røros stasjon" and seen["mode"] == "rail" and seen["count"] == 10
+assert seen["start"] is None  # nothing said about when: from now
+router.route("tog fra Røros i morgen", web.CARDS)  # trains tomorrow are tomorrow's trains, not tonight's
+assert seen["stop"] == "Røros stasjon" and seen["start"] == seen["stamp"] and seen["start"].day != datetime.now().day
 
 router.route("fly over Røros nå", web.CARDS)
 assert seen["place"] == "Røros" and seen["lat"] == 62.19  # aircraft around the place it worked out
