@@ -56,6 +56,9 @@ int tpRead(uint16_t reg, uint8_t *buf, int n) {
 }
 
 // true while a finger is on the glass. Each call also walks the chip through its boot states.
+struct TP{bool down;uint16_t x,y;};
+TP tpXY(){TP r={false,0,0};uint8_t st[4],hdp[64];if(tpRead(0x2000,st,4)<4)return r;bool exist=st[0]&1,bios=st[1]&0x40,cpu=st[1]&0x20,run=st[1]&0x08;int len=min((int)(st[3]<<8|st[2]),(int)sizeof hdp);if(bios){tpWrite(0x0200,0x01,0x00);tpWrite(0x0400,0x01,0x00);}else if(cpu){tpWrite(0x5000,0,0);tpWrite(0x4600,0,0);tpWrite(0x0200,0x01,0x00);}else if(run&&len==0){tpWrite(0x0200,0x01,0x00);}else if(exist){if(tpRead(0x0003,hdp,len)==len){if(len>=12&&hdp[4]<=0x0A){r.down=true;r.x=hdp[8]|(hdp[9]<<8);r.y=hdp[10]|(hdp[11]<<8);}}for(int i=0;i<4;i++){uint8_t hs[8];tpRead(0xFC02,hs,8);if(hs[5]==0x82){tpWrite(0x0200,0x01,0x00);break;}if(hs[5]!=0x00)break;int l2=hs[2]|(hs[3]<<8);tpRead(0x0003,hdp,min(l2,(int)sizeof hdp));}}else if(run&&(st[0]&0x08)){tpWrite(0x0200,0x01,0x00);}return r;}
+
 bool touched() {
   static bool down = false;
   uint8_t st[4], hdp[64], hs[8];
