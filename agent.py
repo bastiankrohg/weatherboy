@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 from anthropic import Anthropic, beta_tool
 
+import claudecode
 import cookbook
 import local
 import presets
@@ -205,6 +206,7 @@ WEB_LIMITS = {"search": {"max_uses": 2}, "fetch": {"max_uses": 2, "max_content_t
 # $ per million tokens (input, output), from the Claude API price list. Cheapest first: the page lists them in order.
 MODELS = {
     "local": {"name": f"Lokal {local.MODEL} (gratis)", "price": (0, 0)},  # see local.py
+    "claude-code": {"name": "Claude (Pro-abonnementet)", "price": (0, 0)},  # see claudecode.py: plan limits, no $
     "claude-haiku-4-5": {"name": "Haiku 4.5 (billigst)", "price": (1, 5)},
     "claude-sonnet-5-5": {"name": "Sonnet 5.5", "price": (2, 10)},
     "claude-opus-5-5": {"name": "Opus 5.5 (smartest, dyrest)", "price": (4, 20)},
@@ -300,7 +302,7 @@ def ask(question, voice=False, use=None, api_key=None, deadline=None):
     if m not in MODELS:
         raise ValueError(f"Unknown model {m!r}")
     via = client_for(api_key)
-    if m != "local" and not (via.api_key or via.auth_token):
+    if m not in ("local", "claude-code") and not (via.api_key or via.auth_token):
         raise RuntimeError(NO_KEY)
     if not _lock.acquire(blocking=False):  # someone else's question first: one conversation at a time
         progress.step("Venter på et annet spørsmål")
@@ -322,6 +324,11 @@ def _ask(question, voice, m, via, deadline=None):
     progress.step(f"Spør {MODELS[m]['name']}")
     if m == "local":  # free: Ollama on the work desktop or this machine, with our own tools (no web)
         return local.chat(system, history, TOOLS + LOCAL_WEB, deadline=deadline), 0.0
+    if m == "claude-code":  # the subscription: web search, none of our tools (the router already tried those)
+        left = deadline - time.monotonic() if deadline else 180
+        text = claudecode.chat(system, history[-1]["content"], new=len(history) == 1, timeout=left)
+        history.append({"role": "assistant", "content": text})
+        return text, 0.0
     return _run(system, history, use=m, via=via, deadline=deadline)
 
 
