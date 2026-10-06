@@ -9,6 +9,7 @@ settings, hooks, plugins or MCP servers, and ANTHROPIC_API_KEY taken out of its 
 bill the API by accident. Our own tools (weather, departures, recipes...) aren't there: the rule router in
 nlp.py handles those before a question gets this far.
 """
+import envfile  # noqa: F401 - .env first: the settings below are read as this loads
 import json
 import os
 import shutil
