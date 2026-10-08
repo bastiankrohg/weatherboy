@@ -14,3 +14,28 @@ def load_env(path=Path(__file__).with_name(".env")):
 
 
 load_env()
+
+
+class Stamped:
+    """stdout with the time in front of every line, for a service writing to a log file: so a printer that
+    stopped answering can be lined up with what else happened. A terminal gets the plain lines."""
+    def __init__(self, out):
+        self.out, self.fresh = out, True
+
+    def write(self, text):
+        from datetime import datetime
+        for piece in text.splitlines(keepends=True):
+            if self.fresh and piece.strip():
+                self.out.write(f"{datetime.now():%d.%m %H:%M:%S} ")
+            self.out.write(piece)
+            self.fresh = piece.endswith("\n")
+        return len(text)
+
+    def __getattr__(self, name):
+        return getattr(self.out, name)
+
+
+def stamp_log():
+    import sys
+    if not sys.stdout.isatty():
+        sys.stdout = Stamped(sys.stdout)

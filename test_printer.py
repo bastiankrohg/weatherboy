@@ -191,6 +191,10 @@ assert printq.print_now("192.168.0.217") == 1 and len(sent) == 1  # the held one
 assert printq.count() == (1, 1) and printq.items()[0]["label"] == "ord"  # only the held job is left
 printer.send = real_send
 
+# when the printer doesn't answer, the queue checks the router: whose fault it is goes in the log
+assert printq.router_answers("127.0.0.9", timeout=0.5)  # 127.0.0.1 refuses: that's an answer
+assert not printq.router_answers("192.0.2.9", timeout=0.3)  # a network that isn't there: no answer
+
 # edit a job's picture and it's the new picture that prints, same id, same place in the order
 id = printq.items()[0]["id"]
 edited = Image.new("L", (layout.DOTS, 40), 255)

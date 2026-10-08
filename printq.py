@@ -182,22 +182,42 @@ def print_now(printer_ip, limit=MAX):
     return n
 
 
+def router_answers(printer_ip, timeout=2):
+    """Does the router (.1 on the printer's network) take a connection? When the printer doesn't answer, this
+    says whose fault it is: this machine's network (the router is gone too) or the printer (it isn't)."""
+    import socket
+    router = printer_ip.rsplit(".", 1)[0] + ".1"
+    for port in (80, 443, 53):
+        try:
+            socket.create_connection((router, port), timeout=timeout).close()
+            return True
+        except ConnectionRefusedError:
+            return True  # it answered, if only to say no
+        except OSError:
+            continue
+    return False
+
+
 def drain(printer_ip, tick=POOL):
     """Empty the queue as soon as the printer takes jobs again. A daemon thread from web.start().
     Held jobs are skipped, never dropped: one you moved back stays where you put it."""
-    waiting = None
+    waiting, since = None, None
     while True:
         try:
             job = print_one(printer_ip)
         except Exception as e:  # noqa: BLE001 - off, busy or out of paper: try again next tick
             job = None
-            if waiting != str(e):
-                print(f"printq: venter ({e})")  # say it once, not every ten seconds
-                waiting = str(e)
+            if waiting != str(e):  # say it once, not every ten seconds; and whose fault it looks like
+                where = ("the router answers: the printer, then" if router_answers(printer_ip)
+                         else "the router doesn't answer either: this machine's network")
+                print(f"printq: venter ({e}) - {where}")
+                waiting, since = str(e), since or time.monotonic()
         if job is None:
             time.sleep(tick)
             continue
-        waiting = None
+        if since:
+            print(f"printq: skriveren svarer igjen etter {(time.monotonic() - since) / 60:.0f} min")
+        waiting, since = None, None
         print(f"printq: skrev ut {job['label']!r}")
 
 

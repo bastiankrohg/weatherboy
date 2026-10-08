@@ -199,8 +199,11 @@ def diagnostics():
                   "--- battery", run("pmset", "-g", "batt"),
                   "--- recent sleep and wake (pmset -g log)",
                   run("pmset", "-g", "log", keep=lambda l: any(w in l for w in sleepy), last=40),
-                  "--- network", run("route", "-n", "get", "default"),
-                  run("ifconfig", "-a", keep=lambda l: l.startswith(("en", "\tinet ", "\tstatus")))]
+                  "--- network", run("/sbin/route", "-n", "get", "default", keep=lambda l: "gateway" in l or "interface" in l),
+                  run("/sbin/ifconfig", "-a", keep=lambda l: l.startswith(("en", "\tinet ", "\tstatus"))),
+                  "--- wifi", run("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-I",
+                                  keep=lambda l: any(k in l for k in ("agrCtlRSSI", "agrCtlNoise", "state", " SSID", "lastTxRate", "channel"))),
+                  "--- router", "answers" if (PRINTER and printq.router_answers(PRINTER)) else "no answer (or no printer set)"]
     return "\n".join(parts) + "\n"
 
 
@@ -960,6 +963,7 @@ if __name__ == "__main__":
     a = p.parse_args()
     # never crash on a character the console can't show; flush each line, so a service's log is live
     sys.stdout.reconfigure(errors="replace", line_buffering=True)
+    envfile.stamp_log()
     start(a.port, a.printer, a.tunnel)
     print(banner())
     while True:

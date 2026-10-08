@@ -11,6 +11,7 @@
     python printer.py 192.168.0.108                 stdlib smoke-test page
     python printq.py 192.168.0.108                  what's waiting for the printer, or print it all
 """
+import envfile  # noqa: F401 - .env first; and the log's timestamps (stamp_log)
 import argparse
 import math
 import os
@@ -55,6 +56,7 @@ def main():
     a = p.parse_args()
     # an emoji in an answer must not crash the loop on a cp1252 console; flush each line for service logs
     sys.stdout.reconfigure(errors="replace", line_buffering=True)
+    envfile.stamp_log()
     password = [w.strip().lower() for w in a.password.split(",")]
 
     if a.web:
