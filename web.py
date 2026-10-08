@@ -164,6 +164,46 @@ BY_KIND = {"card": "kvittering", "answer": "svar", "print": "utskrift"}
 LOG = Path(os.environ.get("WEATHERBOY_LOG", Path.home() / "weatherboy.log"))  # where the service's output goes
 
 
+def diagnostics():
+    """A fixed set of read-only checks on the machine the server runs on, as text: when the printer can't be
+    reached, whether the Mac has been sleeping or its network is down shows here. Nothing here takes input."""
+    import platform
+    import subprocess
+
+    def run(*cmd, keep=None, last=None):
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return f"({e})"
+        lines = out.splitlines()
+        if keep:
+            lines = [l for l in lines if keep(l)]
+        return "\n".join(lines[-last:] if last else lines)
+
+    def reach(host, port):
+        t = time.monotonic()
+        try:
+            socket.create_connection((host, port), timeout=5).close()
+            return f"ok in {(time.monotonic() - t) * 1000:.0f} ms"
+        except OSError as e:
+            return f"no ({e}) after {(time.monotonic() - t) * 1000:.0f} ms"
+
+    parts = [f"{datetime.now():%Y-%m-%d %H:%M:%S} on {platform.node()}, up {run('uptime')}"]
+    if PRINTER:
+        parts.append(f"printer {PRINTER}:9100: {reach(PRINTER, 9100)}")
+    parts.append(f"internet (1.1.1.1:443): {reach('1.1.1.1', 443)}")
+    if sys.platform == "darwin":
+        sleepy = ("Sleep", "Wake", "DarkWake", "Maintenance", "Charge", "Using AC", "Using Batt")
+        parts += ["--- pmset -g", run("pmset", "-g"),
+                  "--- what keeps it awake (pmset -g assertions)", run("pmset", "-g", "assertions", last=40),
+                  "--- battery", run("pmset", "-g", "batt"),
+                  "--- recent sleep and wake (pmset -g log)",
+                  run("pmset", "-g", "log", keep=lambda l: any(w in l for w in sleepy), last=40),
+                  "--- network", run("route", "-n", "get", "default"),
+                  run("ifconfig", "-a", keep=lambda l: l.startswith(("en", "\tinet ", "\tstatus")))]
+    return "\n".join(parts) + "\n"
+
+
 def log_tail(n):
     """The last n lines of the server's log, or a line saying there's none."""
     try:
@@ -634,6 +674,10 @@ class Handler(BaseHTTPRequestHandler):
             buf = io.BytesIO()
             icon_png(path[len("/api/icon/"):-len(".png")]).save(buf, "PNG")
             self.reply(200, buf.getvalue(), "image/png", [("Cache-Control", "max-age=86400")])
+        elif path == "/api/diag":  # how the machine itself is doing: power, sleep, network, the printer (admin)
+            if not self.admin():
+                return self.json({"error": "Bare admin."}, 403)
+            self.reply(200, diagnostics().encode(), "text/plain; charset=utf-8")
         elif path == "/api/progress":  # what a question (by the id the page sent with it) is doing right now
             self.json(progress.get(parse_qs(urlparse(self.path).query).get("id", [""])[0]))
         elif path == "/api/version":  # which commit this server runs: after a push, has the old Mac pulled it yet?

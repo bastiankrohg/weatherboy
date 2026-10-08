@@ -942,6 +942,9 @@ def get3(path, admin=None):
         return e.code, ""
 was_admin, os.environ["WEATHERBOY_ADMIN"] = os.environ.get("WEATHERBOY_ADMIN"), "hemmelig"
 assert get3("/api/log")[0] == 403  # what people said is in there: admin only
+assert get3("/api/diag")[0] == 403
+code, diag = get3("/api/diag", admin="hemmelig")
+assert code == 200 and "internet (1.1.1.1:443):" in diag
 code, text = get3("/api/log?lines=3", admin="hemmelig")
 assert code == 200 and text == "line 497\nline 498\nline 499\n"
 if was_admin is not None:
