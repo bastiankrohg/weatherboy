@@ -157,7 +157,8 @@ def run_voice(a, password):
         orb.set("listen")
         show("I samtale" if chat else "Lytter...")
         # hanging up mid-sentence ends the recording but keeps it: it's still transcribed and acted on
-        audio = listen.record(a.mic, a.threshold, silence=a.pause, max_s=60, wait=wait, abort=hung_up, level=orb.level)
+        audio = listen.record(a.mic, a.threshold, silence=a.pause, max_s=60, wait=wait, abort=hung_up, level=orb.level,
+                              started=lambda: orb.set("hear"))
         if audio is None:
             return None
         orb.set("think")

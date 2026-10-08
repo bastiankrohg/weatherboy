@@ -48,6 +48,8 @@ class Screen:
         while True:
             o = orb.snapshot()
             state, label, text = o["mode"], o["label"], ""
+            if state == "hear":  # catching words: the firmware draws that as listening
+                state = "listen"
             if state == "idle":  # on the hook: a clock
                 now = time.localtime()
                 label, text = time.strftime("%H:%M", now), f"{DAYS[now.tm_wday]} {time.strftime('%d.%m', now)}"
