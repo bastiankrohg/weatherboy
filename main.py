@@ -88,6 +88,8 @@ def run_voice(a, password):
         glass = round_screen.Screen(None if a.screen in (None, "auto") else a.screen, follow=True)
         web.GLASS = glass  # the page's screen test shows the weather on it too
         print(f"screen: {glass.where}")
+    if a.hook == "screen":  # the page's handset indicator reads the same switch: found while it reports
+        web.HOOK = lambda: (glass.ser is not None and time.time() - glass.seen < round_screen.STALE, glass.up)
 
     def hung_up():
         if a.text:

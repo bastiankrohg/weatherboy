@@ -219,6 +219,7 @@ def log_tail(n):
 
 
 GLASS = None  # the round touch screen, handed over by main.py when there is one (screen.Screen)
+HOOK = None  # where the hook switch is, if not the ESP8266: () -> (found, lifted), from main.py
 DEMO = [("idle", ""), ("listen", "Lytter..."), ("think", "Tenker..."), ("speak", "Weatherboy"),
         ("listen", "Skriver ut..."), ("error", "Feil")]
 
@@ -689,6 +690,9 @@ class Handler(BaseHTTPRequestHandler):
             n = min(int(parse_qs(urlparse(self.path).query).get("lines", ["200"])[0]), 2000)
             self.reply(200, "".join(log_tail(n)).encode(), "text/plain; charset=utf-8")
         elif path == "/api/hook":  # the handset, for the page's indicator: cheap, it only reads the heartbeats
+            if HOOK:  # main.py says where the switch is (the round screen's board)
+                found, up = HOOK()
+                return self.json({"found": found, "lifted": found and up})
             import phone
             board = phone._shared
             on_cable = board is not None and isinstance(board.link, phone.SerialLink)

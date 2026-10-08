@@ -996,6 +996,11 @@ got = [next(link.lines()) for _ in range(3)]
 assert len(cfg_line) > 150 and got == [b"HOOK 1", cfg_line.strip(), b"HOOK 1"]  # whole lines, never "OK 1"
 hook = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/hook").read())
 assert hook == {"found": True, "lifted": True}  # the fake board said HOOK 1: the page's indicator shows it lifted
+web.HOOK = lambda: (True, False)  # the switch on the round screen instead: it's the one that counts
+assert json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/hook").read()) == {"found": True, "lifted": False}
+web.HOOK = lambda: (False, True)  # a screen that stopped reporting: not found, whatever it last said
+assert json.loads(urllib.request.urlopen(f"http://127.0.0.1:{srv3.server_port}/api/hook").read()) == {"found": False, "lifted": False}
+web.HOOK = None
 # the page's microphone: browser audio, decoded and run through the handset's speech model
 import wave
 clip = io.BytesIO()

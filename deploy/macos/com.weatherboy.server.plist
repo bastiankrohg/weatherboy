@@ -19,6 +19,9 @@
 		<string>main.py</string>
 		<string>--phone</string>
 		<string>--screen</string>
+		<!-- the hook switch is on the round screen's board (GPIO44, the RX pin, and GND) -->
+		<string>--hook</string>
+		<string>screen</string>
 		<string>--printer</string>
 		<string>192.168.0.108</string>
 		<string>--mic</string>
