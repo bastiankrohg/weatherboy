@@ -17,6 +17,8 @@ COMMANDS = {  # short utterances (1-3 words) that skip the model. NB-Whisper wri
     "departures": ["departures", "avganger", "avgang", "tog", "toget", "train", "trikken", "bussen", "tram", "bus"],
     "flights": ["flights", "planes", "fly", "flyene", "radar"],
     "art": ["art", "kunst", "labyrint", "maze"],
+    "nrk": ["nyheter", "nyhetene", "nrk", "news"],
+    "world": ["verdensnyheter", "world news", "new york times", "utenriks"],
     "print": ["skriv ut", "print"],
     "bye": ["ha det", "hade", "bye", "goodbye", "legg på", "hang up"],
 }

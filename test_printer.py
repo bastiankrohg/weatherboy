@@ -904,6 +904,47 @@ try:
 except urllib.error.HTTPError as e:
     assert e.code in (404, 500)
 
+# the news on paper: NRK's night (its bullets, each story's own summary) and a paper's front page (RSS)
+import news
+from datetime import date as _date
+NIGHT = "https://www.nrk.no/nyheter/dette-skjedde-natt-til-8.-oktober-1.1"
+pages = {
+    news.NRK_SERIES: f'<a href="{NIGHT}">i dag</a><a href="https://www.nrk.no/nyheter/dette-skjedde-natt-til-7.-oktober-1.0">i går</a>',
+    NIGHT: '<nav><p>• Meny • Sport</p></nav><h1>Dette skjedde natt til 8. oktober</h1><p>• Første sak • Andre sak</p>'
+           '<p><a href="https://www.nrk.no/nyheter/forste-1.2">Les også Første sak</a></p>'
+           '<p><a href="https://www.nrk.no/nyheter/andre-1.3">Les også Andre sak</a></p>',
+    "https://www.nrk.no/nyheter/forste-1.2": '<meta name="description" content="Det første som skjedde, på Ørland.">',
+    "https://www.nrk.no/nyheter/andre-1.3": '<meta name="description" content="Og så det andre.">',
+    "https://rss.example.com/front.xml": '<rss><channel><title>NYT &gt; Top Stories</title>'
+        '<item><title>Big story</title><description>&lt;p&gt;The standfirst.&lt;/p&gt;&lt;p&gt;More.&lt;/p&gt;</description></item>'
+        '<item><title><![CDATA[Second]]></title><description><![CDATA[Plain words.]]></description></item></channel></rss>',
+}
+real_get, news._get = news._get, lambda url: pages[url]
+night = news.nrk_night()
+assert night["subtitle"] == "natt til 8. oktober" and night["items"] == [
+    {"headline": "Første sak", "summary": "Det første som skjedde, på Ørland."},  # not the menu's "•" above the h1
+    {"headline": "Andre sak", "summary": "Og så det andre."}]
+class _Day(_date):
+    @classmethod
+    def today(cls):
+        return _date(2026, 10, 9)
+real_date, news.date = news.date, _Day
+try:
+    news.nrk_night(today_only=True)  # the morning print waits for today's edition
+    raise AssertionError("printed yesterday's night as today's")
+except LookupError as e:
+    assert "9. oktober" in str(e)
+news.date = real_date
+front = news.world("https://rss.example.com/front.xml")
+assert front["title"] == "The New York Times" and front["source"] == "example.com"
+assert front["items"] == [{"headline": "Big story", "summary": "The standfirst."}, {"headline": "Second", "summary": "Plain words."}]
+assert layout.news(night).width == 576 and layout.news(front).height > layout.news(night).height // 2
+news._get = real_get
+assert router.command("nyheter") == "nrk" and router.command("verdensnyheter") == "world" and router.command("været") == "weather"
+assert not daily.settings()["nrk"] and not daily.settings()["world"]  # off until someone wants them
+assert daily.update({"nrk": True, "world": True})["nrk"] and daily.JOBS[:2] == ("nrk", "world")  # the news first
+daily.update({"nrk": False, "world": False})
+
 # the voice's transcript for the orb page: both sides, repeats once, a line under each call
 import orb
 orb.FILE = Path(tempfile.mkdtemp()) / "samtale.json"  # never the real one

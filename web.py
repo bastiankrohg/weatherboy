@@ -35,6 +35,7 @@ import home
 import issues
 import orb
 import layout
+import news
 import local
 import presets
 import progress
@@ -135,6 +136,8 @@ def _word(lang=None):
 CARDS = {  # the keyword receipts, shared with main.py. The keyword arguments are what nlp.match() works out.
     "weather": _weather, "departures": _departures, "flights": _flights, "art": _art,
     "qr": lambda when=None: layout.qr(URL, _at(when)), "word": _word,
+    "nrk": lambda when=None: layout.news(news.nrk_night(), _at(when)),  # "Dette skjedde i natt"
+    "world": lambda when=None: layout.news(news.world(), _at(when)),   # an international paper's front page
 }
 
 
@@ -157,7 +160,7 @@ def copies(q):
 
 
 LABELS = {"weather": "vær", "departures": "avganger", "flights": "fly", "art": "kunst", "qr": "qr-kode",
-          "word": "dagens ord"}
+          "word": "dagens ord", "nrk": "nyheter", "world": "verden"}
 BY_KIND = {"card": "kvittering", "answer": "svar", "print": "utskrift"}
 
 
@@ -940,7 +943,10 @@ def daily_job(job, settings):
 
     Goes straight to the printer and lets a refusal out on purpose: daily.run retries every minute until
     it goes out, and leaving a copy in the queue as well would only print it twice."""
-    img = CARDS["art"]() if job == "art" else word_card(settings["lang"])
+    if job in ("nrk", "world"):  # the morning's NRK waits for today's edition; daily.run retries each minute
+        img = layout.news(news.nrk_night(today_only=True) if job == "nrk" else news.world())
+    else:
+        img = CARDS["art"]() if job == "art" else word_card(settings["lang"])
     if not PRINTER:
         raise ValueError("No printer configured: start with --printer <ip>")
     printer.send(printer.encode(layout.to_rows(img.convert("L"))), PRINTER)

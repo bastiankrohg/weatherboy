@@ -1,4 +1,5 @@
-"""The daily prints: art and a word of the day, at a set time, switched on and off from the web page.
+"""The daily prints: art, a word of the day and the news (NRK's night, an international front page), at a set
+time, each switched on and off from the web page.
 The due-or-not rule is due(); the loop in run() retries each minute until the printer takes it."""
 import envfile  # noqa: F401 - .env loaded before the settings below are read
 import json
@@ -13,8 +14,9 @@ SETTINGS = DATA / "daglig.json"
 DONE = DATA / "daglig_utskrevet.json"
 QUIET_FROM = (22, 0)  # no scheduled prints after this; pos_printer.md's quiet hours start 22:30
 DEFAULTS = {"time": os.environ.get("WEATHERBOY_ART_AT", "12:00") or "12:00",
-            "art": bool(os.environ.get("WEATHERBOY_ART_AT", "12:00")), "word": True, "lang": "ko"}
-JOBS = ("art", "word")  # printed in this order, so they come out together
+            "art": bool(os.environ.get("WEATHERBOY_ART_AT", "12:00")), "word": True, "lang": "ko",
+            "nrk": False, "world": False}
+JOBS = ("nrk", "world", "art", "word")  # printed in this order, so they come out together: the news first
 _lock = threading.Lock()
 
 
@@ -40,7 +42,7 @@ def update(changes):
     with _lock:
         s = {**DEFAULTS, **_read(SETTINGS, {})}
         for k, v in changes.items():
-            if k in ("art", "word"):
+            if k in JOBS:
                 s[k] = bool(v)
             elif k == "lang" and v in words.LANGS:
                 s[k] = v

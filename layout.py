@@ -572,9 +572,17 @@ def language(d, x, y):  # a speech bubble with two lines of text
     d.line((x + 10, y + 16, x + 26, y + 16), fill=0, width=3)
 
 
+def newspaper(d, x, y):  # a folded paper: a headline, a picture box and lines of text
+    d.rectangle((x + 2, y + 2, x + 40, y + 31), outline=0, width=3)
+    d.line((x + 8, y + 9, x + 34, y + 9), fill=0, width=3)
+    d.rectangle((x + 8, y + 15, x + 18, y + 24), fill=0)
+    d.line((x + 23, y + 16, x + 34, y + 16), fill=0, width=2)
+    d.line((x + 23, y + 23, x + 34, y + 23), fill=0, width=2)
+
+
 ICONS = {"question": question, "cooking": cooking, "cocktail": cocktail, "weather": weather_icon,
          "transport": transport, "flight": flight, "music": music, "idea": idea, "photo": camera,
-         "shopping": shopping, "language": language}
+         "shopping": shopping, "language": language, "news": newspaper}
 
 
 def photo(picture, when=None):
@@ -590,6 +598,35 @@ def photo(picture, when=None):
         d.text((DOTS - M - small.getlength(stamp), 30), stamp, font=small, fill=0)
     img.paste(picture, (0, top))
     return img.crop((0, 0, DOTS, min(top + picture.height + 8, MAX_H)))
+
+
+def news(n, when=None):
+    """The news on paper: n is news.nrk_night() or news.world(), {"title", "subtitle", "source", "items":
+    [{"headline", "summary"}]}. A title, where it's from, then each story: its headline in bold and a line or
+    three from it, with a rule between them."""
+    small, title, head, body = font(SANS, 20), font(BOLD, 40), font(BOLD, 27), font(SANS, 23)
+    img, d = _canvas()
+    y = _header(d, when, icon="news")
+    for line in wrap(n["title"], pick(title, n["title"])):
+        d.text((M, y), line, font=pick(title, line), fill=0)
+        y += 48
+    d.text((M, y + 2), f"{n['subtitle']}  ·  {n['source']}", font=small, fill=0)
+    y += 36
+    for i, it in enumerate(n["items"]):
+        d.line((M, y, DOTS - M, y), fill=0, width=2 if i == 0 else 1)
+        y += 14
+        for line in wrap(it["headline"], pick(head, it["headline"])):
+            d.text((M, y), line, font=pick(head, line), fill=0)
+            y += 34
+        if it.get("summary"):
+            y += 2
+            for line in wrap(it["summary"], pick(body, it["summary"])):
+                d.text((M, y), line, font=pick(body, line), fill=0)
+                y += 29
+        y += 14
+        if y > MAX_H - 200:  # the paper guard: rather fewer stories than a cut-off one
+            break
+    return img.crop((0, 0, DOTS, min(y + 8, MAX_H)))
 
 
 def word(e, label, when=None):

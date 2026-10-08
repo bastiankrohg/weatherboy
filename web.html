@@ -259,6 +259,8 @@
       <div class="row daily">
         <label class="switch"><input type="checkbox" id="d-art"> Dagens kunst</label>
         <label class="switch"><input type="checkbox" id="d-word"> Dagens ord</label>
+        <label class="switch" title="NRKs «Dette skjedde i natt»: nattens saker, med en linje om hver"><input type="checkbox" id="d-nrk"> Natt-nyheter</label>
+        <label class="switch" title="Hovedsakene på forsiden til The New York Times"><input type="checkbox" id="d-world"> Verden</label>
         <select id="d-lang" aria-label="Språk for dagens ord"></select>
         <label class="time">kl. <input type="time" id="d-time" step="60"></label>
       </div>
@@ -402,6 +404,8 @@
         <button data-card="flights">Fly over oss</button>
         <button data-card="art">Dagens kunst</button>
         <button data-card="qr">QR-lapp til veggen</button>
+        <button data-card="nrk" title="NRKs «Dette skjedde i natt»">Nyheter</button>
+        <button data-card="world" title="Hovedsakene i The New York Times">Verden</button>
       </div>
       <div class="row stops" id="stops"></div>
       <div class="row presets" id="presets"></div>
@@ -1457,7 +1461,7 @@ $("#header").onchange = () => {
 };
 // ...and so is its icon: automatic (what the receipt is about) or one picked here
 const ICON_NAMES = { question: "Spørsmål", cooking: "Mat", cocktail: "Drink", weather: "Vær", transport: "Tog og buss",
-                     flight: "Fly", music: "Musikk", idea: "Idé", photo: "Kamera", shopping: "Handlenett", language: "Språk" };
+                     flight: "Fly", music: "Musikk", idea: "Idé", photo: "Kamera", shopping: "Handlenett", language: "Språk", news: "Avis" };
 fetch("/api/icons").then(r => r.json()).then(names => {
   for (const n of names) $("#headicon").append(Object.assign(document.createElement("option"), { value: n, textContent: ICON_NAMES[n] || n }));
   $("#headicon").value = localStorage.getItem("headicon") || "";
@@ -1706,8 +1710,10 @@ async function daily(changes) {
   if (d.langs && !$("#d-lang").options.length)
     for (const l of d.langs) $("#d-lang").append(Object.assign(document.createElement("option"), { value: l.id, textContent: l.name }));
   $("#d-art").checked = s.art; $("#d-word").checked = s.word; $("#d-lang").value = s.lang; $("#d-time").value = s.time;
-  const jobs = [s.art && "kunst", s.word && "ord"].filter(Boolean);
-  const printed = ["art", "word"].filter(j => s[j] && d.done[j] === today).length === jobs.length && jobs.length;
+  $("#d-nrk").checked = s.nrk; $("#d-world").checked = s.world;
+  const names = { nrk: "nyheter", world: "verden", art: "kunst", word: "ord" };
+  const on = Object.keys(names).filter(j => s[j]), jobs = on.map(j => names[j]);
+  const printed = on.filter(j => d.done[j] === today).length === on.length && on.length;
   $("#d-status").textContent = !jobs.length ? "Av." : printed ? `Skrevet ut i dag. Neste: i morgen kl. ${s.time}.`
                                                      : `Skriver ut ${jobs.join(" og ")} kl. ${s.time}.`;
 }
@@ -1715,7 +1721,9 @@ $("#d-art").onchange = () => daily({ art: $("#d-art").checked });
 $("#d-word").onchange = () => daily({ word: $("#d-word").checked });
 $("#d-lang").onchange = () => daily({ lang: $("#d-lang").value });
 $("#d-time").onchange = () => $("#d-time").value && daily({ time: $("#d-time").value });
-$("#d-off").onclick = () => daily({ art: false, word: false });
+$("#d-nrk").onchange = () => daily({ nrk: $("#d-nrk").checked });
+$("#d-world").onchange = () => daily({ world: $("#d-world").checked });
+$("#d-off").onclick = () => daily({ art: false, word: false, nrk: false, world: false });
 $("#d-preview").onclick = () => preview("/api/card/word?lang=" + $("#d-lang").value);
 
 refreshStatus(); setInterval(() => { refreshStatus(); loadShop(); loadQueue(); }, 10000);

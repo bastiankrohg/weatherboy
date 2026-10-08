@@ -267,6 +267,8 @@ The receipt paper sits in the middle, with the question box above it and the rec
 
 The header's icon can be picked under the paper ("Ikon"): automatic, or any of the receipt icons, for every print.
 
+**The news.** "Nyheter" prints NRK's [Dette skjedde i natt](https://www.nrk.no/nyheter/dette-skjedde-i-natt-1.11996745) (found through its series page, the night's stories with a line from each story's own page), "Verden" the top stories of The New York Times' front page (any RSS feed in `WEATHERBOY_WORLD_FEED`, e.g. `https://feeds.bbci.co.uk/news/world/rss.xml`). Both can be daily prints ("Natt-nyheter", "Verden"), off by default; they print first, and the morning's NRK waits until today's edition is out. By voice: "nyheter", "verdensnyheter".
+
 ## Addresses at home
 
 All reserved on the router (http://192.168.0.1), so they stay put:
