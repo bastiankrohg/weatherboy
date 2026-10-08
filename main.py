@@ -86,6 +86,7 @@ def run_voice(a, password):
     if a.screen or a.hook == "screen":
         import screen as round_screen
         glass = round_screen.Screen(None if a.screen in (None, "auto") else a.screen, follow=True)
+        web.GLASS = glass  # the page's screen test shows the weather on it too
         print(f"screen: {glass.where}")
 
     def hung_up():

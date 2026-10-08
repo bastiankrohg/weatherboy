@@ -218,6 +218,28 @@ def log_tail(n):
         return [f"(no log at {LOG}: {e})\n"]
 
 
+GLASS = None  # the round touch screen, handed over by main.py when there is one (screen.Screen)
+DEMO = [("idle", ""), ("listen", "Lytter..."), ("think", "Tenker..."), ("speak", "Weatherboy"),
+        ("listen", "Skriver ut..."), ("error", "Feil")]
+
+
+def screen_demo(each=4):
+    """Every state for a few seconds, with a voice level where there is one, then the weather; the round screen
+    follows the orb by itself, so this tests the screen, the cable and the firmware without the handset."""
+    import math
+    for mode, label in DEMO:
+        orb.set(mode, label=label)
+        t = time.monotonic()
+        while time.monotonic() - t < each:
+            if mode in ("listen", "speak"):
+                orb.level(0.003 + 0.12 * abs(math.sin((time.monotonic() - t) * 4)))
+            time.sleep(0.05)
+    if GLASS:
+        GLASS.weather({"symbol": "rain", "temp": 12.6, "wind": 7.2, "from": 225})
+        time.sleep(6)
+    orb.set("idle", label="")
+
+
 STT = None  # the handset's speech-to-text, handed over by main.py once it's loaded: stt(audio) -> (text, lang)
 _stt_lock = threading.Lock()  # one transcription at a time: the handset and the page share the model
 
@@ -758,6 +780,11 @@ class Handler(BaseHTTPRequestHandler):
                 m, key = self.model(d)
                 self.json(answer_json(*watched(d, lambda deadline: agent.ask(d["q"], use=m, api_key=key,
                                                                               deadline=deadline)), model=m))
+            elif url.path == "/api/screen/demo":  # every state once, on the orb and the round screen (admin)
+                if not self.admin():
+                    return self.json({"error": "Bare admin."}, 403)
+                threading.Thread(target=screen_demo, daemon=True).start()
+                self.json({"ok": True, "seconds": len(DEMO) * 4 + 6})
             elif url.path == "/api/listen":  # speech recorded in the browser -> text, by the handset's own model
                 self.json(transcribe(body))
             elif url.path == "/api/heard":  # the question box, dumb first: a receipt the rules can make, else 204

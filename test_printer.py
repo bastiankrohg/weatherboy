@@ -947,6 +947,12 @@ def get3(path, admin=None):
 was_admin, os.environ["WEATHERBOY_ADMIN"] = os.environ.get("WEATHERBOY_ADMIN"), "hemmelig"
 assert get3("/api/log")[0] == 403  # what people said is in there: admin only
 assert get3("/api/diag")[0] == 403
+web.DEMO = [("think", "Tenker...")]
+code = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv3.server_port}/api/screen/demo", b"{}",
+                              {"X-Admin": "hemmelig"}, method="POST")).status
+assert code == 200
+_time.sleep(0.5)
+assert orb.snapshot()["mode"] == "think"  # the demo is walking the orb (and so the screen) through its states
 code, diag = get3("/api/diag", admin="hemmelig")
 assert code == 200 and "internet (1.1.1.1:443):" in diag
 code, text = get3("/api/log?lines=3", admin="hemmelig")
