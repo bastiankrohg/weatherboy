@@ -904,6 +904,22 @@ try:
 except urllib.error.HTTPError as e:
     assert e.code in (404, 500)
 
+# the round screen's hook switch, the right way round or turned around (--hook-inverted)
+import screen as round_screen
+class FakeSer:
+    def __init__(self, lines):
+        self.lines = list(lines)
+    def readline(self):
+        if not self.lines:
+            raise OSError("unplugged")
+        return self.lines.pop(0)
+for invert, said, lifted in ((False, b"HOOK 1\n", True), (True, b"HOOK 1\n", False), (True, b"HOOK 0\n", True)):
+    glass = round_screen.Screen.__new__(round_screen.Screen)
+    glass.invert, glass.taps, glass.up, glass.seen = invert, 0, None, 0.0
+    glass.ser = ser = FakeSer([said])
+    glass._listen(ser)
+    assert glass.up is lifted, (invert, said, glass.up)
+
 # the news on paper: NRK's night (its bullets, each story's own summary) and a paper's front page (RSS)
 import news
 from datetime import date as _date

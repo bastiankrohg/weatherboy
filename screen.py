@@ -33,8 +33,9 @@ def guess_port():
 
 
 class Screen:
-    def __init__(self, port=None, follow=False):
+    def __init__(self, port=None, follow=False, invert=False):
         self.port, self.ser, self.tried, self.taps, self.sent = port, None, 0.0, 0, 0.0
+        self.invert = invert  # a hook switch wired the other way round: "HOOK 1" means it's resting
         self.up, self.seen = True, 0.0  # the hook switch on GPIO44, if one is wired (main.py --hook screen)
         self._wlock = threading.Lock()  # the follow thread and main.py's weather write at the same time
         self._open()
@@ -88,7 +89,7 @@ class Screen:
                 if line == b"TAP":
                     self.taps += 1
                 elif line in (b"HOOK 0", b"HOOK 1"):
-                    self.up, self.seen = line == b"HOOK 1", time.time()
+                    self.up, self.seen = (line == b"HOOK 1") != self.invert, time.time()
         except Exception:  # noqa: BLE001 - unplugged; _write notices and reopens
             pass
 

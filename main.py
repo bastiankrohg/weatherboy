@@ -50,6 +50,9 @@ def main():
     p.add_argument("--hook", choices=["phone", "screen"], default="phone",
                    help="whose hook switch counts: the ESP8266 base (--phone) or the one wired to the round screen "
                         "(GPIO44; implies --screen). An unplugged screen then just means always listening")
+    p.add_argument("--hook-inverted", action="store_true",
+                   help="the round screen's hook switch reads the other way round (lifted shows as resting): "
+                        "turned around here, no reflashing")
     p.add_argument("--web", type=int, default=web.PORT, help="web page port, 0 to turn it off")
     p.add_argument("--gui", action="store_true", help="show the voice as an orb in a window (the page at /orb)")
     p.add_argument("--tunnel", help="also run this Cloudflare tunnel for the web page, e.g. weatherboy")
@@ -85,7 +88,8 @@ def run_voice(a, password):
     glass = None  # the round touch screen; it follows the orb by itself
     if a.screen or a.hook == "screen":
         import screen as round_screen
-        glass = round_screen.Screen(None if a.screen in (None, "auto") else a.screen, follow=True)
+        glass = round_screen.Screen(None if a.screen in (None, "auto") else a.screen, follow=True,
+                                    invert=a.hook_inverted)
         web.GLASS = glass  # the page's screen test shows the weather on it too
         print(f"screen: {glass.where}")
     if a.hook == "screen":  # the page's handset indicator reads the same switch: found while it reports
