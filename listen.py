@@ -1,6 +1,11 @@
 """Handset → text. `python listen.py [mic]` shows live input level, for tuning --threshold."""
 import collections
+import os
 import sys
+
+# Download the speech models over plain HTTPS: Hugging Face's newer downloader (hf_xet, a native helper) can't
+# connect from the old Mac on macOS 11, and the voice never started. Set before anything loads huggingface_hub.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 import numpy as np
 import sounddevice as sd
