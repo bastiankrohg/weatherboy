@@ -103,6 +103,9 @@ def _weather(place=None, when=None):
     fc = agent.forecast(lat, lon, _hours(when), _from(when))
     img = layout.weather(place.name if place else agent.PLACE, fc, _at(when))
     img.info["weather"] = fc[0] if fc else None  # the first hour, for the round screen's icon
+    if when and fc and (when.end - when.start).total_seconds() >= 12 * 3600:  # a whole day ("i morgen")
+        img.info["weather"] = min(fc, key=lambda h: abs(h["time"].hour - 13))  # its middle, not its dark first hour
+        img.info["day"] = {"label": when.label, "hours": fc}
     return img
 
 
@@ -806,7 +809,7 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/voice":  # a transcript from any speech pipeline, routed like the handset's
                 d = json.loads(body)
                 r = router.route(d["text"], CARDS, call=bool(d.get("call")))
-                wanted = "image" in r and d.get("print", True)
+                wanted = "image" in r and d.get("print", True) and r.get("print", True)
                 outcome = {"printed": False, "id": None, "why": None}
                 if wanted:
                     _, outcome = render(r.pop("image"), True, label=label_for(r["kind"], r.get("cmd")),

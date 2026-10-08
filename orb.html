@@ -208,20 +208,73 @@ function drawEyes(cx, cy, R, dt, t, online) {
   ctx.restore();
 }
 
+// The weather, around and over the orb: drifting clouds, rain or snow falling, wind streaking across
+const WX_RGB = { sun: [255, 196, 70], clouds: [200, 205, 218], rain: [100, 160, 255], snow: [235, 242, 255] };
+function cloudShape(x, y, s, a) {
+  ctx.fillStyle = `rgb(205 210 222 / ${a})`;
+  ctx.beginPath();
+  for (const [dx, dy, r] of [[-0.9, 0.2, .55], [-0.2, -0.25, .75], [.6, .15, .5], [0, .35, .6]])
+    ctx.moveTo(x + dx * s + r * s, y + dy * s), ctx.arc(x + dx * s, y + dy * s, r * s, 0, 2 * Math.PI);
+  ctx.fill();
+}
+function weatherScene(wx, t) {
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  if (wx.scene !== "sun") {  // a sky full of clouds; with rain or snow too, heavier
+    const many = wx.scene === "clouds" ? 7 : 5;
+    for (let i = 0; i < many; i++) {
+      const s = (60 + (i * 37) % 50) * dpr, x = ((i * 241 + t * (10 + i * 3) * dpr) % (W + 4 * s)) - 2 * s;
+      cloudShape(x, (60 + (i * 97) % (H * .45 / dpr)) * dpr, s, wx.scene === "clouds" ? .55 : .4);
+    }
+  }
+  if (wx.scene === "rain") {
+    ctx.strokeStyle = "rgb(140 185 255 / .75)"; ctx.lineWidth = 1.5 * dpr; ctx.beginPath();
+    for (let i = 0; i < 110; i++) {
+      const x = (i * 131) % W, y = ((i * 73 + t * 520 * dpr) % (H + 40 * dpr)) - 20 * dpr;
+      ctx.moveTo(x, y); ctx.lineTo(x - 6 * dpr, y + 20 * dpr);
+    }
+    ctx.stroke();
+  }
+  if (wx.scene === "snow") {
+    ctx.fillStyle = "rgb(255 255 255 / .85)";
+    for (let i = 0; i < 80; i++) {
+      const x = ((i * 131) % W) + Math.sin(t + i) * 12 * dpr, y = ((i * 73 + t * 70 * dpr) % (H + 20 * dpr)) - 10 * dpr;
+      ctx.beginPath(); ctx.arc(x, y, (2 + i % 2) * dpr, 0, 2 * Math.PI); ctx.fill();
+    }
+  }
+  if (wx.windy) {  // strong wind: streaks blowing across, fast
+    ctx.strokeStyle = "rgb(235 240 250 / .6)"; ctx.lineWidth = 2 * dpr; ctx.beginPath();
+    for (let i = 0; i < 18; i++) {
+      const len = (60 + (i * 41) % 90) * dpr, x = ((i * 157 + t * (700 + i * 30) * dpr) % (W + len)) - len;
+      const y = (40 + (i * 83) % (H / dpr - 80)) * dpr;
+      ctx.moveTo(x, y); ctx.lineTo(x + len, y); ctx.moveTo(x + len * .3, y + 5 * dpr); ctx.lineTo(x + len * .8, y + 5 * dpr);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function frame(now) {
   const dt = Math.min(.05, (now - prev) / 1000), t = (now - t0) / 1000; prev = now;
   const online = now - lastMsg < 1500;
   const m = online ? (MODES[S.mode] || MODES.idle) : MODES.idle;
   const target = online ? S.level : 0;
   lv += (target - lv) * (target > lv ? .5 : .12);
-  col = col.map((c, i) => c + (m.rgb[i] - c) * .06);
+  const wx = online ? S.weather : null;  // the weather, for half a minute after it was asked for
+  const wxRgb = wx ? WX_RGB[wx.scene] || m.rgb : m.rgb;
+  col = col.map((c, i) => c + (wxRgb[i] - c) * .06);
   const rgb = col.map(Math.round).join(" ");
   document.body.style.setProperty("--ph", rgb);
 
   // the orb: a heavy, glossy drop of phosphor, like ferrofluid. Its outline is a radius per angle: a slow
   // wobble that never stops, and while it listens, spikes that stand up with the sound and lie down again.
   ctx.globalCompositeOperation = "source-over";
-  ctx.fillStyle = "rgb(12 10 8 / .8)"; ctx.fillRect(0, 0, W, H);  // a short phosphor tail, not a smear
+  if (wx && wx.scene === "sun") {  // a sunny day: a blue sky behind it, and the orb is the sun
+    const skyG = ctx.createLinearGradient(0, 0, 0, H);
+    skyG.addColorStop(0, "rgb(24 84 170 / .8)"); skyG.addColorStop(1, "rgb(96 160 225 / .8)");
+    ctx.fillStyle = skyG;
+  } else ctx.fillStyle = "rgb(12 10 8 / .8)";
+  ctx.fillRect(0, 0, W, H);  // a short phosphor tail, not a smear
   const speakLv = S.mode === "speak" && online ? lv : 0;
   const R = Math.min(W, H) * .27 * (1 + speakLv * .07),
         cx = W / 2 + (S.mode === "error" && online ? (Math.random() - .5) * 10 * dpr : 0), cy = H / 2 - 18 * dpr;
@@ -289,6 +342,7 @@ function frame(now) {
     ctx.stroke();
   }
   ctx.shadowBlur = 0;
+  if (wx) weatherScene(wx, t);
 
   // static and the hum bar rolling down the screen
   ctx.globalCompositeOperation = "source-over";

@@ -55,10 +55,31 @@ def receipt(text, cards, cmd=None):
     return None
 
 
+# "Ikke skriv ut", "bare vis", "don't print": show it (the screen, the orb), but no paper this time
+NO_PRINT = re.compile(r"[,.]?\s*\b(?:(?:men\s+)?(?:ikke|uten\s+å)\s+(?:skriv|skrive|print|printe)(?:\s+(?:den|det))?(?:\s+ut)?"
+                      r"|bare\s+(?:vis|si|fortell)(?:\s+meg)?(?:\s+det)?|ikke\s+på\s+papir"
+                      r"|(?:but\s+)?(?:don'?t|do\s+not|no)\s+print(?:\s+it)?|just\s+(?:show|tell)(?:\s+me)?(?:\s+it)?)\b[,.]?",
+                      re.IGNORECASE)
+
+
+def without_print(text):
+    """-> (the text without "ikke skriv ut" & co., whether it asked not to print)."""
+    cleaned = NO_PRINT.sub(" ", text)
+    return " ".join(cleaned.split()), cleaned != text
+
+
 def route(text, cards, call=False, password=PASSWORD):
     """-> {"kind": card | print | call | hangup | answer | ignored, "cmd": the keyword or None,
-    "image": a receipt to print (if any), "say": for the earpiece (if any), "text", "cost"}.
+    "image": a receipt to print (if any), "say": for the earpiece (if any), "text", "cost",
+    "print": False if it was asked not to ("ikke skriv ut"), else True}.
     cards: the keyword receipts (web.CARDS). call: inside a phone call, answers are spoken, not printed."""
+    text, quiet = without_print(text)
+    r = _route(text, cards, call, password)
+    r["print"] = not quiet
+    return r
+
+
+def _route(text, cards, call=False, password=PASSWORD):
     global last
     cmd = command(text, password)
     if cmd == "print":  # the recipe itself if the last answer used one, else the last receipt

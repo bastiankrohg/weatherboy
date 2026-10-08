@@ -197,10 +197,19 @@ def run_voice(a, password):
             print(f"> {q}" + (f"   [{cmd}]" if cmd else ""))
             show("Tenker..." if not cmd or cmd == "chat" else cmd.capitalize(), q)
             r = router.route(q, web.CARDS, call=chat, password=password)  # same rules as /api/voice
-            if glass and "image" in r and r["image"].info.get("weather"):
-                glass.weather(r["image"].info["weather"])  # icon, temperature and wind on the round screen
-            if "image" in r:
+            info = r["image"].info if "image" in r else {}
+            if info.get("weather"):  # the weather on the round screen (a whole day as a day) and on the orb
+                day = info.get("day")
+                if glass:
+                    glass.weather(info["weather"])  # an older screen firmware stops here, at the day's middle
+                    if day:
+                        glass.day(day["label"], day["hours"])
+                _, scene, windy = orb.day_summary(day["hours"] if day else [info["weather"]])
+                orb.weather(scene, windy)
+            if "image" in r and r.get("print", True):
                 out(r["image"], label=cmd if cmd and cmd != "chat" else (r.get("cmd") or "kvittering"))
+            elif "image" in r:
+                orb.note("vist, ikke skrevet ut")  # "ikke skriv ut": on the screen only
             screen("done")  # the answer is in: whatever is said aloud now, the thinking is over
             if r["kind"] == "answer":
                 print(f"{r['text']}\n[~${r['cost']:.4f}, ${agent.spent:.4f} since start]\n")

@@ -7,13 +7,21 @@
 //   L <0-255>\n                    mic level while listening
 //   W <symbol>\t<temp>\t<wind>\t<from>\n   the weather: MET symbol code, °C, m/s, degrees the wind comes from.
 //                                  Icon, temperature and a wind arrow for 30 s, the orb turns into the weather.
+//   D <symbol>\t<label>\t<first hour>\t<temps>\t<rain>\t<winds>\n   a whole day ("i morgen"): its main weather as
+//                                  an icon, low and high, and a graph of temperature (line) and rain (bars),
+//                                  hour by hour (comma-separated); 30 s, over the day's weather scene
 //   ?\n                            -> "WEATHERBOY SCREEN <fps>", so the host knows which port this is
+//
+// The weather shows as a scene around the orb: sun on a blue sky, drifting clouds, falling rain or snow, and
+// streaks blowing across when it's windy (8 m/s on average, which is gusts of about 12).
 //
 // Build: arduino-cli compile --fqbn esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,CDCOnBoot=cdc esp32s3
 // Needs the GFX_Library_for_Arduino and U8g2 libraries (U8g2 only for its fonts: æøå).
+#include <U8g2lib.h>  // first: Arduino_GFX only turns on its u8g2 font support if it can see this
 #include <Arduino_GFX_Library.h>
-#include <U8g2lib.h>
 #include <Wire.h>
+
+struct TP { bool down; uint16_t x, y; };  // up here: Arduino puts its generated prototypes first
 
 #define BL 5
 #define TP_INT 4
@@ -56,7 +64,7 @@ int tpRead(uint16_t reg, uint8_t *buf, int n) {
 }
 
 // true while a finger is on the glass. Each call also walks the chip through its boot states.
-struct TP{bool down;uint16_t x,y;};
+
 TP tpXY(){TP r={false,0,0};uint8_t st[4],hdp[64];if(tpRead(0x2000,st,4)<4)return r;bool exist=st[0]&1,bios=st[1]&0x40,cpu=st[1]&0x20,run=st[1]&0x08;int len=min((int)(st[3]<<8|st[2]),(int)sizeof hdp);if(bios){tpWrite(0x0200,0x01,0x00);tpWrite(0x0400,0x01,0x00);}else if(cpu){tpWrite(0x5000,0,0);tpWrite(0x4600,0,0);tpWrite(0x0200,0x01,0x00);}else if(run&&len==0){tpWrite(0x0200,0x01,0x00);}else if(exist){if(tpRead(0x0003,hdp,len)==len){if(len>=12&&hdp[4]<=0x0A){r.down=true;r.x=hdp[8]|(hdp[9]<<8);r.y=hdp[10]|(hdp[11]<<8);}}for(int i=0;i<4;i++){uint8_t hs[8];tpRead(0xFC02,hs,8);if(hs[5]==0x82){tpWrite(0x0200,0x01,0x00);break;}if(hs[5]!=0x00)break;int l2=hs[2]|(hs[3]<<8);tpRead(0x0003,hdp,min(l2,(int)sizeof hdp));}}else if(run&&(st[0]&0x08)){tpWrite(0x0200,0x01,0x00);}return r;}
 
 bool touched() {
@@ -118,8 +126,13 @@ const Look LOOKS[] = {
 };
 enum { SUN, PARTLY, CLOUD, RAIN, SNOW, THUNDER, FOG, MOON, MOONCLOUD };
 String wxSymbol;              // the weather overlay: MET symbol, and what to write
-float wxTemp, wxWind, wxFrom;
+float wxTemp, wxWind, wxFrom, wxWindMax;
 uint32_t wxUntil = 0;
+const int DAYMAX = 48;        // a day's hours, for the D view
+float dayT[DAYMAX], dayR[DAYMAX];
+int dayN = 0, dayStart = 0;
+bool dayView = false;
+String dayLabel;
 
 int sky() {  // MET symbol code -> icon
   const String &s = wxSymbol;
@@ -181,8 +194,11 @@ void orb(float t, float dt) {
     edge[a] = now.radius * (1 + w) * breathe * (1 + v * 0.25 + kick * 0.15);
   }
 
-  // palette: black -> glow -> core -> white
-  const float black[3] = {0, 0, 0}, white[3] = {255, 255, 255};
+  // palette: black -> glow -> core -> white; under a sunny sky the black is blue, and the orb is the sun
+  int k0 = weather() ? sky() : -1;
+  bool blueSky = k0 == SUN || k0 == PARTLY;
+  const float night[3] = {0, 0, 0}, sky[3] = {40, 110, 210}, white[3] = {255, 255, 255};
+  const float *black = blueSky ? sky : night;
   for (int i = 0; i < 256; i++)
     pal[i] = i < 128 ? mix(black, now.glow, i / 128.0) : i < 210 ? mix(now.glow, now.core, (i - 128) / 82.0)
                                                                  : mix(now.core, white, (i - 210) / 60.0);
@@ -310,7 +326,76 @@ void arrow(int x, int y, float from) {  // points where the wind blows to, like 
   gfx->fillTriangle(x + dx * 16, y + dy * 16, x + dx * 4 + px * 8, y + dy * 4 + py * 8, x + dx * 4 - px * 8, y + dy * 4 - py * 8, c);
 }
 
+// The weather around the orb: clouds drifting, rain or snow falling, wind blowing across
+int windStreak(int i, float t, int len) { return ((int)(i * 97 + t * (420 + i * 13)) % (412 + len)) - len; }
+
+void scene(float t) {
+  int k = sky();
+  uint16_t grey = gfx->color565(150, 155, 168), light = gfx->color565(210, 214, 224);
+  if (k == CLOUD || k == RAIN || k == SNOW || k == THUNDER) {  // a sky full of clouds, drifting
+    for (int i = 0; i < 6; i++) {
+      int x = ((int)(i * 83 + t * (8 + i * 2)) % 520) - 54, y = 60 + (i * 53) % 150;
+      cloud(x, y, i % 2 ? grey : light);
+    }
+  }
+  if (k == RAIN || k == THUNDER) {  // rain: slanted streaks falling past
+    uint16_t blue = gfx->color565(110, 170, 255);
+    for (int i = 0; i < 60; i++) {
+      int x = (i * 71) % 412, y = ((int)(i * 37 + t * 380) % 440) - 20;
+      gfx->drawLine(x, y, x - 5, y + 16, blue);
+    }
+  }
+  if (k == SNOW) {
+    for (int i = 0; i < 50; i++) {
+      int x = (i * 71 + (int)(12 * sin(t + i))) % 412, y = ((int)(i * 37 + t * 60) % 430) - 10;
+      gfx->fillCircle(x, y, 2 + i % 2, RGB565_WHITE);
+    }
+  }
+  if (wxWindMax >= 8) {  // strong wind: streaks blowing across, fast
+    for (int i = 0; i < 14; i++) {
+      int len = 40 + (i * 29) % 70, x = windStreak(i, t, len), y = 50 + (i * 47) % 320;
+      gfx->drawFastHLine(x, y, len, light);
+      gfx->drawFastHLine(x + len / 3, y + 3, len / 2, grey);
+    }
+  }
+}
+
+// A whole day: its weather, low and high, and the temperature (line) and rain (bars) through it
+void drawDay() {
+  icon(C, 78);
+  float lo = 1e9, hi = -1e9, rmax = 1;
+  for (int i = 0; i < dayN; i++) lo = min(lo, dayT[i]), hi = max(hi, dayT[i]), rmax = max(rmax, dayR[i]);
+  gfx->setFont(u8g2_font_helvB24_tf);
+  centred(String((int)lroundf(lo)) + "° / " + String((int)lroundf(hi)) + "°", 168, RGB565_WHITE);  // UTF-8, like æøå
+  const int x0 = 70, x1 = 342, top = 196, bot = 312;
+  float w = (x1 - x0) / (float)max(1, dayN);
+  uint16_t blue = gfx->color565(90, 160, 255), amber = gfx->color565(255, 190, 70), dim = gfx->color565(120, 120, 130);
+  gfx->drawFastHLine(x0, bot, x1 - x0, dim);
+  for (int i = 0; i < dayN; i++) {  // rain: bars from the bottom, the wettest hour (or 1 mm) reaching 60 px
+    int h = dayR[i] / rmax * 60;
+    if (h > 0) gfx->fillRect(x0 + i * w + 1, bot - h, max(1.0f, w - 2), h, blue);
+  }
+  for (int i = 1; i < dayN; i++) {  // temperature: a thick line across the top part
+    float span = max(1.0f, hi - lo);
+    int ya = bot - 18 - (dayT[i - 1] - lo) / span * 86, yb = bot - 18 - (dayT[i] - lo) / span * 86;
+    for (int o = -1; o <= 1; o++) gfx->drawLine(x0 + (i - 0.5) * w, ya + o, x0 + (i + 0.5) * w, yb + o, amber);
+  }
+  gfx->setFont(u8g2_font_helvR12_tf);
+  gfx->setTextColor(dim);
+  for (int i = 0; i < dayN; i++) {
+    int hour = (dayStart + i) % 24;
+    if (hour % 6 == 0) {
+      gfx->setCursor(x0 + i * w - 6, bot + 18);
+      gfx->print(hour < 10 ? "0" + String(hour) : String(hour));
+    }
+  }
+  gfx->setFont(u8g2_font_helvR18_tf);
+  centred(dayLabel, 362, gfx->color565(215, 215, 215));
+}
+
 void drawWeather() {
+  scene(millis() / 1000.0);
+  if (dayView) { drawDay(); return; }
   icon(C, 92);
   gfx->setFont(u8g2_font_logisoso62_tn);
   String t = String((int)lroundf(wxTemp));
@@ -362,6 +447,36 @@ void command(String line) {
     wxSymbol = line.substring(2, a);
     wxTemp = line.substring(a + 1, b).toFloat(), wxWind = line.substring(b + 1, c).toFloat();
     wxFrom = line.substring(c + 1).toFloat();
+    wxWindMax = wxWind, dayView = false;
+    wxUntil = millis() + 30000, kick = 1;
+    return;
+  }
+  if (line.startsWith("D ")) {  // a day: symbol, label, first hour, then three comma lists
+    String f[6];
+    int from = 2;
+    for (int i = 0; i < 6; i++) {
+      int to = line.indexOf('\t', from);
+      f[i] = line.substring(from, to < 0 ? line.length() : to);
+      from = to + 1;
+      if (to < 0 && i < 5) return;  // a short line: not ours
+    }
+    wxSymbol = f[0], dayLabel = f[1], dayStart = f[2].toInt();
+    auto list = [](const String &s, float *out) {
+      int n = 0, from = 0;
+      while (n < DAYMAX && from <= (int)s.length()) {
+        int to = s.indexOf(',', from);
+        out[n++] = s.substring(from, to < 0 ? s.length() : to).toFloat();
+        if (to < 0) break;
+        from = to + 1;
+      }
+      return n;
+    };
+    float winds[DAYMAX];
+    dayN = min(list(f[3], dayT), list(f[4], dayR));
+    int nw = list(f[5], winds);
+    wxWindMax = 0;
+    for (int i = 0; i < nw; i++) wxWindMax = max(wxWindMax, winds[i]);
+    dayView = true;
     wxUntil = millis() + 30000, kick = 1;
     return;
   }

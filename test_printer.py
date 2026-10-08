@@ -648,7 +648,13 @@ agent.ask = lambda q, voice=False: asked.append((q, voice)) or ("tema: idea\nLys
 fake_cards = {"weather": lambda **kw: layout.lcd("vær", w=576)}  # takes the arguments nlp works out
 r = router.route("Været", fake_cards)
 assert r["kind"] == "card" and r["cmd"] == "weather" and r["image"].width == 576 and not asked
-assert router.route("ananas", fake_cards) == {"kind": "call", "cmd": "chat", "say": router.GREETING}
+assert router.route("ananas", fake_cards) == {"kind": "call", "cmd": "chat", "say": router.GREETING, "print": True}
+# "ikke skriv ut" & co.: taken out before the rest is understood, and printing is off for this one
+for said in ("Været, ikke skriv ut", "været men ikke skriv det ut", "bare vis været", "The weather, don't print it"):
+    r = router.route(said, fake_cards)
+    assert r["kind"] == "card" and r["cmd"] == "weather" and r["print"] is False, (said, r)
+assert router.without_print("Hvordan blir været i morgen? Ikke skriv ut.") == ("Hvordan blir været i morgen?", True)
+assert router.route("været", fake_cards)["print"] is True  # printing is the default
 r = router.route("hvor fort går lyset", fake_cards)
 assert r["kind"] == "answer" and r["text"] == "Lys går fort." and asked[-1] == ("hvor fort går lyset", False)
 cookbook.last = None
@@ -919,6 +925,27 @@ for invert, said, lifted in ((False, b"HOOK 1\n", True), (True, b"HOOK 1\n", Fal
     glass.ser = ser = FakeSer([said])
     glass._listen(ser)
     assert glass.up is lifted, (invert, said, glass.up)
+
+# the weather as a scene on the orb and the round screen, and a whole day as a day
+import orb
+from datetime import datetime as _dt
+def _hours(symbols, rain=0.0, wind=3.0):
+    return [{"time": _dt(2026, 10, 9, h), "symbol": s, "temp": 8 + h / 4, "rain": rain, "wind": wind}
+            for h, s in zip(range(6, 6 + len(symbols)), symbols)]
+assert orb.day_summary(_hours(["clearsky_night", "clearsky_day"] + ["fair_day"] * 10))[:2] == ("fair_day", "sun")
+assert orb.day_summary(_hours(["cloudy"] * 12))[1] == "clouds"
+assert orb.day_summary(_hours(["cloudy"] * 12, rain=0.4))[:2] == ("rain", "rain")  # 4 mm in daytime: rain
+assert orb.day_summary(_hours(["cloudy"] * 12, wind=9))[2] and not orb.day_summary(_hours(["cloudy"] * 12))[2]
+orb.weather("rain", windy=True)
+assert orb.snapshot()["weather"] == {"scene": "rain", "windy": True}
+orb._state["weather"]["until"] = 0
+assert "weather" not in orb.snapshot()  # it shows for a while, then the orb is itself again
+sent = []
+glass = round_screen.Screen.__new__(round_screen.Screen)
+glass._write = sent.append
+glass.day("i morgen", _hours(["rain"] * 18, rain=0.5, wind=9))
+f = sent[0].split("\t")
+assert f[0] == "D rain" and f[1] == "i morgen" and f[2] == "6" and len(f[3].split(",")) == 18 and f[5].startswith("9.0")
 
 # the news on paper: NRK's night (its bullets, each story's own summary) and a paper's front page (RSS)
 import news

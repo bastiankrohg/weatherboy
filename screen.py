@@ -130,6 +130,15 @@ class Screen:
         """One hour of agent.forecast: shown as icon, temperature and wind for 30 s."""
         self._write(f"W {hour['symbol'] or 'cloudy'}\t{hour['temp']:.1f}\t{hour['wind']:.1f}\t{hour.get('from') or 0:.0f}")
 
+    def day(self, label, hours):
+        """A whole day ("i morgen"): its main weather, low and high, and temperature, rain and wind hour by hour."""
+        import orb
+        symbol = orb.day_summary(hours)[0]
+        hours = hours[:48]
+        nums = lambda key: ",".join(f"{h.get(key) or 0:.1f}" for h in hours)
+        clean = lambda s: " ".join(str(s).split())
+        self._write(f"D {symbol}\t{clean(label)}\t{hours[0]['time'].hour}\t{nums('temp')}\t{nums('rain')}\t{nums('wind')}")
+
     def level(self, x):
         """0-1, how loud the mic is. Throttled: the animation smooths it anyway."""
         if time.time() - self.sent > 0.05:

@@ -64,6 +64,38 @@ def _save():
         pass
 
 
+WINDY = 8  # m/s on average: gusts of about 12, the forecast has no gusts of its own
+
+
+def day_summary(hours):
+    """A day's forecast -> (MET symbol for the day, scene, windy). The scene is what the orb shows: "rain"
+    (or "snow") if it'll rain, at least 2 mm in daytime, else "clouds" for a cloudy day, else "sun"."""
+    daytime = [h for h in hours if 8 <= h["time"].hour <= 20] or hours
+    symbols = [(h.get("symbol") or "cloudy").replace("_night", "_day") for h in daytime]
+    main = max(dict.fromkeys(symbols), key=symbols.count)  # the most common; the first of equals
+    wet = sum(h.get("rain") or 0 for h in daytime)
+    if wet >= 2 and not any(w in main for w in ("rain", "snow", "sleet", "thunder")):
+        main = "snow" if any("snow" in s for s in symbols) else "rain"
+    return main, scene_of(main), max(h.get("wind") or 0 for h in hours) >= WINDY
+
+
+def scene_of(symbol):
+    s = symbol or ""
+    if any(w in s for w in ("rain", "sleet", "thunder")):
+        return "rain"
+    if "snow" in s:
+        return "snow"
+    if s.startswith(("clearsky", "fair")):
+        return "sun"
+    return "clouds"
+
+
+def weather(scene, windy=False, seconds=30):
+    """Show the weather on the page's orb for a while: "sun", "clouds", "rain" or "snow", and wind."""
+    with _lock:
+        _state["weather"] = {"scene": scene, "windy": bool(windy), "until": time.time() + seconds}
+
+
 def note(text):
     """A line about how the voice is doing ("hørte 2.1 s lyd ..."), small in the transcript."""
     with _lock:
@@ -89,6 +121,9 @@ def level(rms):
 def snapshot():
     with _lock:
         s = dict(_state)
+        w = s.pop("weather", None)
+        if w and w["until"] > time.time():
+            s["weather"] = {"scene": w["scene"], "windy": w["windy"]}
         if time.monotonic() - _level_at > 0.3:  # nobody is reporting (thinking, hung up): silence
             s["level"] = 0.0
     return s
