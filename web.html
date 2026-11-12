@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weatherboy</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40'%3E%3Cpath d='M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z' fill='%23fff' stroke='%23211e1a' stroke-width='3.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!-- the fonts for text on the paper; without the internet they fall back to the plain one -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Anton&family=Pacifico&family=Bangers&family=Bungee+Shade&family=Fascinate+Inline&family=Monoton&family=Rubik+Wet+Paint&family=UnifrakturMaguntia&family=Monsieur+La+Doulaise&display=swap">
 <style>
   :root {
     --paperfont: system-ui, -apple-system, "Segoe UI", sans-serif;  /* text on the paper: the same on screen and print */
@@ -89,6 +92,9 @@
   .iconpicker { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 420px; margin: -6px auto 14px;
                 background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
   .iconpicker button { background: #fff; padding: 6px; border-radius: 6px; line-height: 0; }
+  .templpicker { max-width: 560px; }
+  .templpicker button { line-height: 1.1; padding: 8px 12px; font-size: 18px; color: #000; }
+  .item.image.ph img { opacity: .9; }
   .iconpicker img { height: 26px; image-rendering: pixelated; }
   .stage .actions, .stage .printopts, .stage .editor, .stage #recipeactions, .stage .msg { max-width: 560px; margin-left: auto; margin-right: auto; }
   .printopts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
@@ -222,6 +228,12 @@
   .tools input[type=range] { width: 90px; }
   #canvas { width: 100%; display: block; background: #fff; touch-action: none; cursor: crosshair;
             border-radius: 2px; box-shadow: 0 1px 4px rgb(0 0 0 / .18); }
+  .canvaswrap { position: relative; }
+  .cvtext { position: absolute; white-space: pre; line-height: 1.2; color: #000; min-width: 1ch; padding: 0; margin: 0;
+            outline: 1px dashed var(--accent); background: transparent; cursor: text; }
+  #textopts { display: contents; }
+  #textopts[hidden] { display: none; }
+  .fontsel { font-size: 14px; padding: 5px 6px; max-width: 180px; }
   .editor textarea { min-height: 160px; font-size: 14px; }
   .editor .row { margin-top: 8px; }
   .queue { list-style: none; margin: 0; padding: 0; }
@@ -336,10 +348,15 @@
         <button id="addicon" aria-haspopup="true" aria-expanded="false" title="Et av kvitteringenes ikoner">+ Ikon</button>
         <label class="file" title="Et bilde: det blir prikket som et foto når det skrives ut">+ Bilde<input type="file" id="addimage" accept="image/*"></label>
         <button id="addline" title="En strek, for å dele opp">+ Strek</button>
+        <button id="addtemplate" aria-haspopup="true" aria-expanded="false" title="Et ferdig kort: tittel, bilde og tekst du kan flytte på">Maler</button>
         <span id="seltools" hidden>
           <button id="smaller" title="Mindre" aria-label="Mindre">A−</button>
           <button id="bigger" title="Større" aria-label="Større">A+</button>
+          <select id="fontsel" class="fontsel" title="Skrifttype" aria-label="Skrifttype"></select>
           <button id="boldbtn" title="Fet skrift" aria-label="Fet" aria-pressed="false"><b>B</b></button>
+          <button id="colorbtn" title="Hvit eller svart tekst (hvit synes på svarte felt)" aria-label="Hvit tekst" aria-pressed="false">◐</button>
+          <button id="alignbtn" title="Midtstill linjene i teksten" aria-label="Midtstill" aria-pressed="false">≡</button>
+          <button id="swapimg" title="Velg et annet bilde i samme ramme">Bytt bilde</button>
           <button id="forward" title="Legg øverst" aria-label="Legg øverst">⤒</button>
           <button id="backward" title="Legg nederst" aria-label="Legg nederst">⤓</button>
           <button id="remove" title="Fjern (Delete)">Fjern</button>
@@ -348,6 +365,7 @@
         <button id="blanksheet" title="Start på et tomt ark">Tomt ark</button>
       </div>
       <div class="iconpicker" id="iconpicker" hidden></div>
+      <div class="iconpicker templpicker" id="templpicker" hidden></div>
       <div class="sheet" id="sheet">
         <div class="paper" id="paper"><p class="empty">Velg en kvittering, et spørsmål, et bilde eller en oppskrift for å se den her, prikk for prikk. Eller legg til tekst, ikoner og bilder over.</p></div>
         <div class="layer" id="layer" aria-label="Det du har lagt til på papiret"></div>
@@ -380,12 +398,17 @@
           <button data-tool="pen" title="Tegn med svart">Penn</button>
           <button data-tool="white" title="Tegn med hvitt: dekk over noe">Hvit</button>
           <button data-tool="eraser" title="Visk ut det du har tegnet">Visk</button>
+          <button data-tool="text" title="Trykk der teksten skal stå, og skriv. Enter setter den på arket">Tekst</button>
+          <span id="textopts" hidden>
+            <select id="edfont" class="fontsel" title="Skrifttype" aria-label="Skrifttype"></select>
+            <label>Størrelse <input type="range" id="textsize" min="12" max="120" value="36"></label>
+          </span>
           <button id="rotl" title="Roter mot klokka" aria-label="Roter mot klokka">⟲</button>
           <button id="rotr" title="Roter med klokka" aria-label="Roter med klokka">⟳</button>
           <button id="undo" title="Angre" aria-label="Angre">↶</button>
           <label>Strek <input type="range" id="pensize" min="2" max="40" value="6"></label>
         </div>
-        <canvas id="canvas" aria-label="Tegneflate"></canvas>
+        <div class="canvaswrap" id="canvaswrap"><canvas id="canvas" aria-label="Tegneflate"></canvas></div>
         <p class="msg" id="length"></p>
         <div class="row"><button id="cancel">Avbryt</button><button class="primary" id="done">Bruk endringene</button></div>
       </div>
@@ -472,7 +495,9 @@
         <summary>Papiret: lag din egen lapp</summary>
         <p>Over papiret legger du til <b>tekst</b>, <b>ikoner</b>, <b>bilder</b> og <b>streker</b>, oppå kvitteringen
           som vises, eller på et <b>tomt ark</b>. Dra for å flytte, dra i hjørnet for å endre størrelsen, og i den
-          runde prikken for å rotere. Dobbeltklikk på en tekst for å skrive i den. Piltastene flytter litt,
+          runde prikken for å rotere. Dobbeltklikk på en tekst for å skrive i den, og velg skrifttype når den er
+          markert. <b>«Maler»</b> lager et ferdig kort (magasin, plakat, barokk …): dobbeltklikk på bildefeltet for å
+          fylle det med et bilde. Piltastene flytter litt,
           Delete fjerner, og ↶ angrer. «Skriv ut» og «Kø» tar med alt du har lagt til. Lappen huskes på denne
           enheten til du velger en annen kvittering.</p>
       </details>
@@ -629,7 +654,7 @@ $("#ko").onclick = async () => {
 async function send(print, queue = false) {
   if (!design.items.length) return receipt(current.path, current.body, current.type, print, queue);
   const blob = await composeDesign();
-  const dither = design.items.some(it => it.type === "image") ? 1 : 0;  // photos get dotted; text and icons stay crisp
+  const dither = design.items.some(it => it.type === "image" && !it.ph) ? 1 : 0;  // photos get dotted; text and icons stay crisp
   return receipt(`/api/image?dither=${dither}`, blob, "image/png", print, queue);
 }
 
@@ -642,7 +667,25 @@ let writing = null, nextId = 1;  // the text item being typed into
 const k = () => $("#paper").clientWidth / DOTS;
 const byId = id => design.items.find(it => it.id === id);
 const PAPERFONT = getComputedStyle(document.documentElement).getPropertyValue("--paperfont");
-const font = (it, scale) => `${it.bold ? 700 : 400} ${it.size * scale}px ${PAPERFONT}`;
+// The fonts text can have: the plain one, and some with more character (loaded from Google Fonts in <head>)
+const FONTS = [
+  ["", "Vanlig"],
+  ["Abril Fatface", "Abril: motemagasin"],
+  ["Anton", "Anton: smal plakat"],
+  ["Pacifico", "Pacifico: løkkeskrift"],
+  ["Bangers", "Bangers: tegneserie"],
+  ["Bungee Shade", "Bungee Shade: ordkunst"],
+  ["Fascinate Inline", "Fascinate: sirkusplakat"],
+  ["Monoton", "Monoton: neon"],
+  ["Rubik Wet Paint", "Wet Paint: rennende maling"],
+  ["UnifrakturMaguntia", "Fraktur: gotisk"],
+  ["Monsieur La Doulaise", "Doulaise: barokke snirkler"],
+];
+const family = f => f ? `"${f}", ${PAPERFONT}` : PAPERFONT;
+let lastFont = "";  // new text gets the font picked last
+for (const sel of [$("#fontsel"), $("#edfont")])
+  for (const [f, label] of FONTS) sel.append(Object.assign(new Option(label, f), { style: `font-family: ${family(f)}` }));
+const font = (it, scale) => `${it.bold ? 700 : 400} ${it.size * scale}px ${family(it.font)}`;
 
 function remember() {  // on this device, so a reload doesn't lose the design
   try { localStorage.setItem("design", JSON.stringify({ base: design.base, baseH: design.baseH, items: design.items })); }
@@ -653,7 +696,9 @@ function checkpoint() {
   if (undoStack.length > 60) undoStack.shift();
   $("#designundo").disabled = false;
 }
+function undoState() { $("#designundo").disabled = editing ? !ed.undo.length : !undoStack.length; }
 $("#designundo").onclick = () => {
+  if (editing) return edUndo();
   if (!undoStack.length) return;
   Object.assign(design, JSON.parse(undoStack.pop()), { sel: null });
   $("#designundo").disabled = !undoStack.length;
@@ -687,6 +732,9 @@ function place(el, it) {
   el.style.transform = `rotate(${it.rot || 0}deg)`;
   if (it.type === "text") {
     el.style.font = font(it, s);
+    el.style.lineHeight = 1.2;  // the font shorthand resets it; the print spaces lines 1.2 apart
+    el.style.color = it.color || "";
+    el.style.textAlign = it.align || "";
     it.w = el.offsetWidth / s; it.h = el.offsetHeight / s;  // text sizes itself; the print needs to know how big
   } else {
     el.style.width = it.w * s + "px";
@@ -699,6 +747,7 @@ function drawLayer() {
   for (const it of design.items) {
     const el = Object.assign(document.createElement("div"), { className: `item ${it.type}` + (it.id === design.sel ? " sel" : "") });
     el.dataset.id = it.id;
+    if (it.ph) el.classList.add("ph");
     if (it.type === "text") el.textContent = it.text;
     else if (it.type !== "line") el.append(Object.assign(new Image(), { src: it.src, alt: "", draggable: false }));
     layer.append(el);
@@ -709,7 +758,12 @@ function drawLayer() {
   $("#paper").style.minHeight = paperHeight() * s + "px";
   const sel = byId(design.sel);
   $("#seltools").hidden = !sel;
-  $("#boldbtn").hidden = !sel || sel.type !== "text";
+  $("#boldbtn").hidden = $("#fontsel").hidden = !sel || sel.type !== "text";
+  if (sel?.type === "text") $("#fontsel").value = sel.font || "";
+  $("#colorbtn").hidden = $("#alignbtn").hidden = $("#fontsel").hidden;
+  $("#colorbtn").setAttribute("aria-pressed", sel?.color === "#fff");
+  $("#alignbtn").setAttribute("aria-pressed", sel?.align === "center");
+  $("#swapimg").hidden = !sel || sel.type !== "image";
   $("#boldbtn").setAttribute("aria-pressed", !!sel?.bold);
   const any = design.items.length > 0;
   if (any) $("#print").disabled = $("#ko").disabled = false;
@@ -730,11 +784,12 @@ function add(it) {
   return it;
 }
 $("#addtext").onclick = () => {
-  const it = add({ type: "text", text: "Skriv her", size: 40, bold: false });
+  const it = add({ type: "text", text: "Skriv her", size: 40, bold: false, font: lastFont });
   startEditing($(`.item[data-id="${it.id}"]`), it, true);
 };
 $("#addline").onclick = () => add({ type: "line", w: 480, h: 4, x: 48 });
 $("#blanksheet").onclick = () => {
+  if (editing) return edBlank();
   if (design.base || design.items.length) checkpoint();
   Object.assign(design, { base: null, baseH: 0, items: [], sel: null });
   current = null;
@@ -743,6 +798,86 @@ $("#blanksheet").onclick = () => {
   recipeActions();
   say("Et tomt ark: legg til tekst, ikoner og bilder.");
 };
+// ---- Templates: a whole card laid out at once, in the manner of a magazine cover or a poster ---------------
+// In printer dots (576 across). c: centred across the paper. ph: a picture frame to fill (double-click it).
+function frame(w, h) {  // an empty picture frame: grey with stripes, and what to do
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h }), g = c.getContext("2d");
+  g.fillStyle = "#e4e1db"; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "#cfcac1"; g.lineWidth = 6;
+  for (let d = -h; d < w; d += 28) { g.beginPath(); g.moveTo(d, h); g.lineTo(d + h, 0); g.stroke(); }
+  g.fillStyle = "#6d665c"; g.font = `600 22px ${PAPERFONT}`; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText("Dobbeltklikk: velg et bilde", w / 2, h / 2);
+  return { type: "image", ph: true, w, h, src: c.toDataURL() };
+}
+const today = () => new Date().toLocaleDateString("nb-NO", { day: "numeric", month: "long", year: "numeric" });
+const T = (text, size, font, more = {}) => ({ type: "text", text, size, font, bold: false, ...more });
+const TEMPLATES = {
+  "Magasin": () => [
+    T("BURSDAG", 118, "Abril Fatface", { c: 1, y: 6 }),
+    { type: "line", x: 28, y: 152, w: 520, h: 3 },
+    T(`SPESIALUTGAVE · ${today().toUpperCase()}`, 19, "", { bold: true, c: 1, y: 164 }),
+    { ...frame(520, 420), x: 28, y: 204 },
+    T("Navn fyller år!", 48, "Abril Fatface", { c: 1, y: 640 }),
+    T("Kaken, gjestene og\nårets beste dag: side 30", 24, "", { c: 1, align: "center", y: 712 }),
+  ],
+  "Sveitsisk": () => [
+    { type: "line", x: 0, y: 0, w: 576, h: 26 },
+    T("HURRA", 150, "Anton", { x: 18, y: 34 }),
+    { ...frame(300, 380), x: 20, y: 250 },
+    T("30", 210, "Anton", { x: 342, y: 230 }),
+    T("ÅR", 64, "Anton", { x: 350, y: 500 }),
+    T("Gratulerer med dagen,\nNavn.", 28, "", { bold: true, x: 20, y: 652 }),
+    { type: "line", x: 0, y: 742, w: 576, h: 10 },
+  ],
+  "Barokk": () => [
+    T("Gratulerer\nmed dagen", 92, "Monsieur La Doulaise", { c: 1, align: "center", y: 26 }),
+    { ...frame(340, 400), c: 1, y: 276 },
+    T("Kjære Navn", 52, "UnifrakturMaguntia", { c: 1, y: 700 }),
+    T("~ ❦ ~", 34, "", { c: 1, y: 774 }),
+  ],
+  "Ordkunst": () => [
+    T("HIPP HIPP\nHURRA!", 78, "Bungee Shade", { c: 1, align: "center", y: 24, rot: -6 }),
+    { ...frame(440, 330), c: 1, y: 252, rot: 3 },
+    T("Navn", 96, "Rubik Wet Paint", { c: 1, y: 600 }),
+    T("har bursdag!!", 46, "Pacifico", { c: 1, y: 714, rot: -4 }),
+  ],
+  "Plakat": () => [
+    { type: "line", x: 0, y: 0, w: 576, h: 290 },
+    T("GRATULERER\nMED DAGEN", 104, "Anton", { c: 1, align: "center", color: "#fff", y: 14 }),
+    { ...frame(576, 400), x: 0, y: 290 },
+    T("NAVN · 30 ÅR", 58, "Anton", { c: 1, y: 708 }),
+    T("Fra oss alle", 30, "Abril Fatface", { c: 1, y: 800 }),
+  ],
+};
+for (const [name, make] of Object.entries(TEMPLATES)) {
+  const first = make()[0], f = first.type === "text" ? first.font : make()[1].font;
+  const b = Object.assign(document.createElement("button"), { textContent: name, title: `Bursdagskort: ${name}` });
+  b.style.fontFamily = family(f);
+  b.onclick = () => useTemplate(make);
+  $("#templpicker").append(b);
+}
+$("#addtemplate").onclick = () => {
+  const picker = $("#templpicker");
+  picker.hidden = !picker.hidden;
+  $("#addtemplate").setAttribute("aria-expanded", !picker.hidden);
+};
+async function useTemplate(make) {
+  if (editing) closeEditor();
+  if (design.base || design.items.length) checkpoint();
+  const items = make().map(it => ({ rot: 0, x: 0, ...it, id: nextId++ }));
+  await Promise.all(items.filter(it => it.type === "text").map(it => document.fonts.load(font(it, 1), it.text).catch(() => {})));
+  Object.assign(design, { base: null, baseH: 0, items, sel: null });
+  current = null;
+  $("#templpicker").hidden = true; $("#addtemplate").setAttribute("aria-expanded", false);
+  showBase(); drawLayer();  // text measures itself here
+  for (const it of items) if (it.c) { it.x = (DOTS - it.w) / 2; delete it.c; }
+  drawLayer(); remember();
+  $("#edit").disabled = true;
+  recipeActions();
+  say("Et kort: dobbeltklikk på teksten for å skrive, og på bildefeltet for å velge et bilde. Dra alt dit det passer.");
+  if (matchMedia("(max-width: 820px)").matches) $("#sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 $("#addicon").onclick = async () => {
   const picker = $("#iconpicker");
   picker.hidden = !picker.hidden;
@@ -762,12 +897,26 @@ $("#addicon").onclick = async () => {
     picker.append(b);
   }
 };
+let into = null;  // the picture frame the chosen image goes into, or null for a new image
+function pickInto(it) { into = it.id; $("#addimage").click(); }
+$("#addimage").onclick = e => { if (e.isTrusted) into = null; };  // "+ Bilde" itself: a new image
 $("#addimage").onchange = async ev => {
-  const file = ev.target.files[0];
-  ev.target.value = "";
+  const file = ev.target.files[0], frame = byId(into);
+  ev.target.value = ""; into = null;
   if (!file) return;
   const img = Object.assign(new Image(), { src: URL.createObjectURL(file) });
   try { await img.decode(); } catch { return say("Kunne ikke lese bildet.", true); }
+  if (frame) {  // fill the frame, cut to its shape from the middle, so the layout stays as it is
+    const nw = img.naturalWidth, nh = img.naturalHeight, a = frame.w / frame.h;
+    const sw = Math.min(nw, nh * a), sh = sw / a;
+    const w = Math.min(Math.round(sw), DOTS), h = Math.round(w / a);
+    const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+    c.getContext("2d").drawImage(img, (nw - sw) / 2, (nh - sh) / 2, sw, sh, 0, 0, w, h);
+    checkpoint();
+    frame.src = c.toDataURL("image/jpeg", .88); delete frame.ph;
+    drawLayer(); remember();
+    return;
+  }
   const w = Math.min(img.naturalWidth, DOTS), h = img.naturalHeight * w / img.naturalWidth;  // never more dots than print
   const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
   c.getContext("2d").drawImage(img, 0, 0, w, h);
@@ -789,6 +938,16 @@ function resize(f) {
   it.x = cx - it.w / 2; it.y = cy - it.h / 2;
   drawLayer(); remember();
 }
+$("#colorbtn").onclick = () => { const it = byId(design.sel); if (!it) return; checkpoint(); it.color = it.color === "#fff" ? undefined : "#fff"; drawLayer(); remember(); };
+$("#alignbtn").onclick = () => { const it = byId(design.sel); if (!it) return; checkpoint(); it.align = it.align === "center" ? undefined : "center"; drawLayer(); remember(); };
+$("#swapimg").onclick = () => { const it = byId(design.sel); if (it) pickInto(it); };
+$("#fontsel").onchange = async () => {
+  const it = byId(design.sel); if (!it) return;
+  checkpoint(); it.font = lastFont = $("#fontsel").value; $("#edfont").value = lastFont;
+  await document.fonts.load(font(it, 1), it.text).catch(() => {});
+  const cx = it.x + it.w / 2; drawLayer(); it.x = cx - it.w / 2;  // stays centred where it was
+  drawLayer(); remember();
+};
 $("#boldbtn").onclick = () => { const it = byId(design.sel); if (!it) return; checkpoint(); it.bold = !it.bold; drawLayer(); remember(); };
 $("#forward").onclick = () => restack(true);
 $("#backward").onclick = () => restack(false);
@@ -824,8 +983,9 @@ function startEditing(el, it, selectAll = false) {  // text: written straight on
   };
 }
 $("#layer").addEventListener("dblclick", e => {
-  const el = e.target.closest(".item.text");
+  const el = e.target.closest(".item.text"), pic = e.target.closest(".item.image");
   if (el) startEditing(el, byId(+el.dataset.id));
+  else if (pic) pickInto(byId(+pic.dataset.id));
 });
 
 // Moving, sizing and turning, with the mouse or a finger
@@ -886,12 +1046,16 @@ async function composeDesign() {
   const load = src => { const i = new Image(); i.src = src; return i.decode().then(() => i); };
   if (design.base) g.drawImage(await load(design.base), 0, 0, DOTS, design.baseH);
   for (const it of design.items) {
+    if (it.ph) continue;  // an empty picture frame isn't printed
     g.save();
     g.translate(it.x + it.w / 2, it.y + it.h / 2);
     g.rotate((it.rot || 0) * Math.PI / 180);
     if (it.type === "text") {
-      g.fillStyle = "#000"; g.font = font(it, 1); g.textBaseline = "top";
-      it.text.split("\n").forEach((line, i) => g.fillText(line, -it.w / 2 + 1, -it.h / 2 + i * it.size * 1.2 + it.size * .1));
+      await document.fonts.load(font(it, 1), it.text).catch(() => {});
+      g.fillStyle = it.color || "#000"; g.font = font(it, 1); g.textBaseline = "top";
+      g.textAlign = it.align === "center" ? "center" : "left";
+      const x0 = it.align === "center" ? 0 : -it.w / 2 + 1;
+      it.text.split("\n").forEach((line, i) => g.fillText(line, x0, -it.h / 2 + i * it.size * 1.2 + it.size * .1));
     } else if (it.type === "line") {
       g.fillStyle = "#000"; g.fillRect(-it.w / 2, -it.h / 2, it.w, it.h);
     } else {
@@ -951,7 +1115,7 @@ function openEditor(image, dither, tool, job = null) {
   showEditor();
 }
 
-function closeEditor() { editing = false; showEditor(); }
+function closeEditor() { if (typing) { typing.box.remove(); typing = null; } editing = false; showEditor(); }
 
 function showEditor() {
   $("#edit").setAttribute("aria-pressed", editing);
@@ -961,6 +1125,7 @@ function showEditor() {
   $("#edittext").hidden = $("#textrow").hidden = !isText;
   $("#saverecipe").hidden = !current?.recipe;
   if (isText && $("#edittext").dataset.for !== current.a) { $("#edittext").value = current.a; $("#edittext").dataset.for = current.a; }
+  undoState();
   if (editing) draw();
 }
 
@@ -991,7 +1156,10 @@ function draw() {
 }
 
 function setTool(tool) {
+  commitTyping();
   ed.tool = tool;
+  $("#textopts").hidden = tool !== "text";
+  cv.style.cursor = tool === "text" ? "text" : "";
   document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === tool));
 }
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
@@ -1005,11 +1173,11 @@ let stroke = null;
 cv.onpointerdown = e => {
   if (e.pointerType === "pen") ed.penSeen = true;
   if (ed.penSeen && e.pointerType === "touch") return;  // Apple Pencil in use: ignore the palm
+  if (ed.tool === "text") { e.preventDefault(); return startTyping(e); }
   cv.setPointerCapture(e.pointerId);
   const p = pos(e);
   if (ed.tool === "crop") { stroke = { start: p }; return; }
-  ed.undo.push(ed.ink.getContext("2d").getImageData(0, 0, ed.ink.width, ed.ink.height));
-  if (ed.undo.length > 20) ed.undo.shift();
+  edSnapshot();
   stroke = { last: p };
   paint(p, p, e);
   draw();
@@ -1050,6 +1218,49 @@ function paint(a, b, e) {
   x.stroke();
 }
 
+// Text in the editor: typed in a box over the canvas, then drawn into the ink (so ↶ and "Visk" work on it too)
+let typing = null;
+$("#edfont").onchange = () => {
+  lastFont = $("#edfont").value;
+  if (typing) { typing.font = lastFont; typing.box.style.fontFamily = family(lastFont); typing.box.focus(); }
+};
+$("#textsize").oninput = () => { if (typing) { typing.size = +$("#textsize").value; typing.box.style.fontSize = typing.size + "px"; } };
+function startTyping(e) {
+  commitTyping();
+  const size = +$("#textsize").value, wrap = $("#canvaswrap").getBoundingClientRect();
+  const box = Object.assign(document.createElement("div"), { className: "cvtext", contentEditable: "true" });
+  box.style.font = `${size}px/1.2 ${family(lastFont)}`;
+  box.style.left = e.clientX - wrap.left + "px";
+  box.style.top = e.clientY - wrap.top - size * .6 + "px";  // the line sits where you pressed
+  $("#canvaswrap").append(box);
+  typing = { box, size, font: lastFont };
+  box.onkeydown = ev => {
+    if (ev.key === "Escape") { ev.preventDefault(); box.textContent = ""; commitTyping(); }
+    else if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); commitTyping(); }  // Shift+Enter: a new line
+  };
+  box.onblur = () => commitTyping();
+  requestAnimationFrame(() => box.focus());
+}
+let typed = Promise.resolve();  // the last text being drawn in: "Bruk endringene" waits for it
+function commitTyping() { return typed = drawTyping(); }
+async function drawTyping() {
+  if (!typing) return;
+  const { box, size, font: f } = typing;
+  typing = null;
+  const text = box.innerText.replace(/\n$/, ""), b = box.getBoundingClientRect();
+  box.remove();
+  if (!text.trim()) return;
+  const at = pos({ clientX: b.left, clientY: b.top }), scale = cv.width / cv.getBoundingClientRect().width;
+  const css = `${size * scale}px ${family(f)}`;
+  await document.fonts.load(css, text).catch(() => {});
+  edSnapshot();
+  const x = ed.ink.getContext("2d");
+  x.globalCompositeOperation = "source-over";
+  x.fillStyle = "#000"; x.font = css; x.textBaseline = "top";
+  text.split("\n").forEach((line, i) => x.fillText(line, at.x, at.y + (i * 1.2 + .1) * size * scale));
+  draw();
+}
+
 function rotate(dir) {  // 90° clockwise (1) or counter-clockwise (-1): landscape <-> portrait
   const turn = src => layer(src.height, src.width, x => {
     x.translate(dir > 0 ? src.height : 0, dir > 0 ? 0 : src.width);
@@ -1060,13 +1271,47 @@ function rotate(dir) {  // 90° clockwise (1) or counter-clockwise (-1): landsca
   ed.ink = turn(ed.ink);
   ed.crop = { x: 0, y: 0, w: ed.base.width, h: ed.base.height };
   ed.undo = [];
+  undoState();
   draw();
 }
 $("#rotl").onclick = () => rotate(-1);
 $("#rotr").onclick = () => rotate(1);
-$("#undo").onclick = () => { const u = ed.undo.pop(); if (u) { ed.ink.getContext("2d").putImageData(u, 0, 0); draw(); } };
+// Undo in the editor: each step keeps the ink as it was, and the paper under it when "Tomt ark" replaced that
+function edSnapshot(base = null) {
+  ed.undo.push({ ink: ed.ink.getContext("2d").getImageData(0, 0, ed.ink.width, ed.ink.height), base, crop: ed.crop });
+  if (ed.undo.length > 20) ed.undo.shift();
+  undoState();
+}
+function edUndo() {
+  const u = ed.undo.pop();
+  if (u) {
+    if (u.base) ed.base = u.base;
+    ed.crop = u.crop;
+    ed.ink.getContext("2d").putImageData(u.ink, 0, 0);
+    draw();
+  }
+  undoState();
+}
+function edBlank() {  // "Tomt ark" while drawing: a white sheet the same size, nothing drawn on it
+  edSnapshot(ed.base);
+  const { width: w, height: h } = ed.base;
+  ed.base = layer(w, h, x => { x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); });
+  ed.ink.getContext("2d").clearRect(0, 0, w, h);
+  ed.crop = { x: 0, y: 0, w, h };
+  draw();
+  say("Et tomt ark: tegn i vei.");
+}
+$("#undo").onclick = edUndo;
+// Cmd/Ctrl+Z: the drawing while the editor is open, otherwise what was added on the paper
+document.addEventListener("keydown", e => {
+  if (e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+  if (writing || e.target.closest("input:not([type=range]), textarea, select, [contenteditable=true]")) return;  // their own undo
+  e.preventDefault();
+  if (editing) edUndo(); else $("#designundo").click();
+});
 $("#cancel").onclick = closeEditor;
-$("#done").onclick = () => {
+$("#done").onclick = async () => {
+  await commitTyping(); await typed;
   const { base, ink, crop } = ed;
   const out = layer(Math.round(crop.w), Math.round(crop.h), x => {
     x.drawImage(base, -crop.x, -crop.y);
