@@ -85,6 +85,11 @@
                                  border: 2px solid var(--accent); }
   .item .h-scale { right: -9px; bottom: -9px; cursor: nwse-resize; border-radius: 2px; }
   .item .h-rot { left: calc(50% - 6px); top: -26px; border-radius: 50%; cursor: grab; }
+  .item .h-l, .item .h-r, .item .h-b { position: absolute; background: var(--card); border: 2px solid var(--accent); border-radius: 3px; }
+  .item .h-l, .item .h-r { top: calc(50% - 9px); width: 8px; height: 18px; cursor: ew-resize; }
+  .item .h-l { left: -7px; } .item .h-r { right: -7px; }
+  .item .h-b { left: calc(50% - 9px); bottom: -7px; width: 18px; height: 8px; cursor: ns-resize; }
+  .item.text.box { white-space: pre; }
   .designbar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: -12px auto 14px; max-width: 640px; }
   .designbar button, .designbar .file { font-size: 14px; padding: 6px 10px; }
   .designbar #seltools { display: contents; }
@@ -496,7 +501,8 @@
         <p>Over papiret legger du til <b>tekst</b>, <b>ikoner</b>, <b>bilder</b> og <b>streker</b>, oppå kvitteringen
           som vises, eller på et <b>tomt ark</b>. Dra for å flytte, dra i hjørnet for å endre størrelsen, og i den
           runde prikken for å rotere. Dobbeltklikk på en tekst for å skrive i den, og velg skrifttype når den er
-          markert. <b>«Maler»</b> lager et ferdig kort (magasin, plakat, barokk …): dobbeltklikk på bildefeltet for å
+          markert. Dra i sidene på en tekstboks for å gjøre den smalere eller bredere: ordene brytes på nytt over
+          én eller flere linjer, og håndtaket nederst gjør den høyere. <b>«Maler»</b> lager et ferdig kort (magasin, plakat, barokk …): dobbeltklikk på bildefeltet for å
           fylle det med et bilde. Piltastene flytter litt,
           Delete fjerner, og ↶ angrer. «Skriv ut» og «Kø» tar med alt du har lagt til. Lappen huskes på denne
           enheten til du velger en annen kvittering.</p>
@@ -688,6 +694,27 @@ let lastFont = "";  // new text gets the font picked last
 for (const sel of [$("#fontsel"), $("#edfont")])
   for (const [f, label] of FONTS) sel.append(Object.assign(new Option(label, f), { style: `font-family: ${family(f)}` }));
 const font = (it, scale) => `${it.bold ? 700 : 400} ${it.size * scale}px ${family(it.font)}`;
+// A text box with a width (boxW, in dots) wraps its words to fit, the same lines on screen and on paper
+const measure = document.createElement("canvas").getContext("2d");
+function lines(it) {
+  if (!it.boxW) return it.text.split("\n");
+  measure.font = font(it, 1);
+  const fits = t => measure.measureText(t).width <= it.boxW - 2, out = [];
+  for (const para of it.text.split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const next = line ? line + " " + word : word;
+      if (fits(next) || !line) line = next; else { out.push(line); line = word; }
+      while (!fits(line) && line.length > 1) {  // one word wider than the box: broken where it must
+        let n = line.length - 1;
+        while (n > 1 && !fits(line.slice(0, n))) n--;
+        out.push(line.slice(0, n)); line = line.slice(n);
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
 
 function remember() {  // on this device, so a reload doesn't lose the design
   try { localStorage.setItem("design", JSON.stringify({ base: design.base, baseH: design.baseH, items: design.items })); }
@@ -737,7 +764,11 @@ function place(el, it) {
     el.style.lineHeight = 1.2;  // the font shorthand resets it; the print spaces lines 1.2 apart
     el.style.color = it.color || "";
     el.style.textAlign = it.align || "";
-    it.w = el.offsetWidth / s; it.h = el.offsetHeight / s;  // text sizes itself; the print needs to know how big
+    if (!el.isContentEditable) el.textContent = lines(it).join("\n");
+    el.classList.toggle("box", !!it.boxW);
+    el.style.width = it.boxW ? it.boxW * s + "px" : "";
+    el.style.minHeight = it.boxH ? it.boxH * s + "px" : "";
+    it.w = it.boxW || el.offsetWidth / s; it.h = el.offsetHeight / s;  // text sizes itself; the print needs to know how big
   } else {
     el.style.width = it.w * s + "px";
     el.style.height = it.h * s + "px";
@@ -756,6 +787,9 @@ function drawLayer() {
     place(el, it);
     if (it.id === design.sel) el.append(Object.assign(document.createElement("i"), { className: "h-scale", title: "Dra for å endre størrelsen" }),
                                        Object.assign(document.createElement("i"), { className: "h-rot", title: "Dra for å rotere" }));
+    if (it.id === design.sel && it.type === "text")
+      el.append(...[["h-l", "Dra for å gjøre boksen smalere eller bredere"], ["h-r", "Dra for å gjøre boksen smalere eller bredere"],
+                    ["h-b", "Dra for å gjøre boksen høyere"]].map(([className, title]) => Object.assign(document.createElement("i"), { className, title })));
   }
   $("#paper").style.minHeight = paperHeight() * s + "px";
   const sel = byId(design.sel);
@@ -1008,6 +1042,8 @@ function removeSelected() {
 function startEditing(el, it, selectAll = false) {  // text: written straight on the paper
   writing = it;
   el.contentEditable = "true";
+  el.textContent = it.text;  // the words as written, not as wrapped
+  if (it.boxW) el.style.whiteSpace = "pre-wrap";
   el.focus();
   if (selectAll) document.getSelection().selectAllChildren(el);
   el.onblur = () => {
@@ -1015,7 +1051,11 @@ function startEditing(el, it, selectAll = false) {  // text: written straight on
     const text = el.innerText.replace(/\n$/, "");
     writing = null;
     if (text.trim() !== it.text) { checkpoint(); it.text = text.trim() || "…"; }
-    drawLayer(); remember();
+    drawLayer();
+    if (!it.boxW && it.w > DOTS - 32 && !it.rot) {  // wider than the paper: a box the paper's width, the words wrapped in it
+      it.boxW = DOTS - 48; it.x = 24; drawLayer();
+    }
+    remember();
   };
 }
 $("#layer").addEventListener("dblclick", e => {
@@ -1031,7 +1071,9 @@ $("#layer").addEventListener("pointerdown", e => {
   const it = byId(+el.dataset.id);
   if (design.sel !== it.id) { design.sel = it.id; drawLayer(); }
   const live = $(`.item[data-id="${it.id}"]`);
-  const mode = e.target.classList.contains("h-scale") ? "scale" : e.target.classList.contains("h-rot") ? "rot" : "move";
+  const cls = e.target.classList;
+  const mode = cls.contains("h-scale") ? "scale" : cls.contains("h-rot") ? "rot"
+             : cls.contains("h-l") ? "left" : cls.contains("h-r") ? "right" : cls.contains("h-b") ? "bottom" : "move";
   const s = k(), start = { ...it }, x0 = e.clientX, y0 = e.clientY;
   const box = live.getBoundingClientRect(), cx = box.left + box.width / 2, cy = box.top + box.height / 2;
   const d0 = Math.max(4, Math.hypot(x0 - cx, y0 - cy));
@@ -1049,6 +1091,20 @@ $("#layer").addEventListener("pointerdown", e => {
       else { it.w = start.w * f; it.h = start.h * f; }
       place(live, it);
       it.x = start.x + (start.w - it.w) / 2; it.y = start.y + (start.h - it.h) / 2;
+    } else if (mode === "left" || mode === "right" || mode === "bottom") {
+      // the box's edges, PowerPoint-style: wider or narrower re-wraps the words; the opposite edge and the top stay put
+      const r = (it.rot || 0) * Math.PI / 180, dx = (m.clientX - x0) / s, dy = (m.clientY - y0) / s;
+      const along = dx * Math.cos(r) + dy * Math.sin(r), across = -dx * Math.sin(r) + dy * Math.cos(r);
+      measure.font = font(it, 1);  // no narrower than the longest word: words stay whole
+      const minW = Math.min(DOTS, Math.max(it.size * .8, ...it.text.split(/\s+/).map(w => measure.measureText(w).width + 4)));
+      if (mode === "right") it.boxW = Math.max(minW, start.w + along);
+      else if (mode === "left") it.boxW = Math.max(minW, start.w - along);
+      else { it.boxW = it.boxW || start.w; it.boxH = Math.max(0, start.h + across); }
+      place(live, it);
+      const side = mode === "right" ? 1 : mode === "left" ? -1 : 0;
+      const lx = side * (it.w - start.w) / 2, ly = (it.h - start.h) / 2;  // how far the middle moves, in the box's own turn
+      const mx = start.x + start.w / 2 + lx * Math.cos(r) - ly * Math.sin(r), my = start.y + start.h / 2 + lx * Math.sin(r) + ly * Math.cos(r);
+      it.x = mx - it.w / 2; it.y = Math.max(0, my - it.h / 2);
     } else {
       let a = Math.atan2(m.clientY - cy, m.clientX - cx) * 180 / Math.PI + 90;
       for (const snap of [0, 90, 180, -90, 270]) if (Math.abs(a - snap) < 4) a = snap;  // straight is easy to hit
@@ -1091,7 +1147,7 @@ async function composeDesign() {
       g.fillStyle = it.color || "#000"; g.font = font(it, 1); g.textBaseline = "top";
       g.textAlign = it.align === "center" ? "center" : "left";
       const x0 = it.align === "center" ? 0 : -it.w / 2 + 1;
-      it.text.split("\n").forEach((line, i) => g.fillText(line, x0, -it.h / 2 + i * it.size * 1.2 + it.size * .1));
+      lines(it).forEach((line, i) => g.fillText(line, x0, -it.h / 2 + i * it.size * 1.2 + it.size * .1));
     } else if (it.type === "line") {
       g.fillStyle = "#000"; g.fillRect(-it.w / 2, -it.h / 2, it.w, it.h);
     } else {
