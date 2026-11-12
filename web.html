@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40'%3E%3Cpath d='M18 36h30a11 11 0 0 0 1.5-21.9A15 15 0 0 0 21.3 11 12.5 12.5 0 0 0 18 36z' fill='%23fff' stroke='%23211e1a' stroke-width='3.5' stroke-linejoin='round'/%3E%3C/svg%3E">
 <!-- the fonts for text on the paper; without the internet they fall back to the plain one -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Anton&family=Pacifico&family=Bangers&family=Bungee+Shade&family=Fascinate+Inline&family=Monoton&family=Rubik+Wet+Paint&family=UnifrakturMaguntia&family=Monsieur+La+Doulaise&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Cormorant+Garamond:wght@400;700&family=DM+Serif+Display&family=Anton&family=Pacifico&family=Bangers&family=Bungee+Shade&family=Fascinate+Inline&family=Monoton&family=Rubik+Wet+Paint&family=UnifrakturMaguntia&family=Monsieur+La+Doulaise&display=swap">
 <style>
   :root {
     --paperfont: system-ui, -apple-system, "Segoe UI", sans-serif;  /* text on the paper: the same on screen and print */
@@ -670,6 +670,8 @@ const PAPERFONT = getComputedStyle(document.documentElement).getPropertyValue("-
 // The fonts text can have: the plain one, and some with more character (loaded from Google Fonts in <head>)
 const FONTS = [
   ["", "Vanlig"],
+  ["Cormorant Garamond", "Cormorant: klassisk og lett"],
+  ["DM Serif Display", "DM Serif: redaksjonell"],
   ["Abril Fatface", "Abril: motemagasin"],
   ["Anton", "Anton: smal plakat"],
   ["Pacifico", "Pacifico: løkkeskrift"],
@@ -805,13 +807,47 @@ function frame(w, h) {  // an empty picture frame: grey with stripes, and what t
   g.fillStyle = "#e4e1db"; g.fillRect(0, 0, w, h);
   g.strokeStyle = "#cfcac1"; g.lineWidth = 6;
   for (let d = -h; d < w; d += 28) { g.beginPath(); g.moveTo(d, h); g.lineTo(d + h, 0); g.stroke(); }
-  g.fillStyle = "#6d665c"; g.font = `600 22px ${PAPERFONT}`; g.textAlign = "center"; g.textBaseline = "middle";
-  g.fillText("Dobbeltklikk: velg et bilde", w / 2, h / 2);
+  const size = Math.min(22, w / 9);  // small frames get small words, so they fit
+  g.fillStyle = "#6d665c"; g.font = `600 ${size}px ${PAPERFONT}`; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText("Dobbeltklikk:", w / 2, h / 2 - size * .65);
+  g.fillText("velg et bilde", w / 2, h / 2 + size * .65);
   return { type: "image", ph: true, w, h, src: c.toDataURL() };
 }
 const today = () => new Date().toLocaleDateString("nb-NO", { day: "numeric", month: "long", year: "numeric" });
 const T = (text, size, font, more = {}) => ({ type: "text", text, size, font, bold: false, ...more });
 const TEMPLATES = {
+  // the quiet ones: much white, one serif, thin lines
+  "Ren": () => [
+    T("Gratulerer\nmed dagen", 68, "Cormorant Garamond", { x: 40, y: 588 }),
+    T(today().toUpperCase(), 17, "", { bold: true, x: 40, y: 40 }),
+    { ...frame(496, 480), x: 40, y: 84 },
+    { type: "line", x: 40, y: 772, w: 496, h: 2 },
+    T("Til Navn, fra oss", 22, "", { x: 40, y: 788 }),
+  ],
+  "Galleri": () => [
+    T("Navn", 30, "DM Serif Display", { x: 88, y: 598 }),
+    { ...frame(400, 500), x: 88, y: 64 },
+    T("Født på denne dagen\nBlandingsteknikk, 30 år\nUtlånt av familien", 19, "", { x: 88, y: 640 }),
+  ],
+  "Brev": () => [
+    T("Kjære Navn,", 52, "Cormorant Garamond", { x: 48, y: 52 }),
+    { ...frame(200, 200), x: 336, y: 40 },
+    T("Gratulerer så mye med dagen!\nHåper året blir fullt av\ngode ting, og litt kake.", 27, "Cormorant Garamond", { x: 48, y: 282 }),
+    { type: "line", x: 48, y: 432, w: 120, h: 2 },
+    T("Klem fra oss", 34, "Cormorant Garamond", { bold: true, x: 48, y: 450 }),
+  ],
+  "Rutenett": () => [
+    T("30", 220, "DM Serif Display", { x: 18, y: 64 }),
+    { type: "line", x: 24, y: 24, w: 528, h: 2 },
+    T("BURSDAG", 18, "", { bold: true, x: 24, y: 36 }),
+    T(today(), 18, "", { x: 292, y: 36 }),
+    { ...frame(260, 300), x: 292, y: 84 },
+    { type: "line", x: 24, y: 412, w: 528, h: 2 },
+    T("Navn", 44, "DM Serif Display", { x: 24, y: 428 }),
+    T("Gratulerer med dagen.\nVi heier på deg.", 21, "", { x: 292, y: 436 }),
+    { type: "line", x: 24, y: 540, w: 528, h: 2 },
+  ],
+  // the loud ones
   "Magasin": () => [
     T("BURSDAG", 118, "Abril Fatface", { c: 1, y: 6 }),
     { type: "line", x: 28, y: 152, w: 520, h: 3 },
