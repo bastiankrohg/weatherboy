@@ -388,7 +388,7 @@ SERVE = [
      ["Varm liten tallerken", "løk midt", "lokket lent mot", "1 purreskive", "sprø sjalott på fyllet",
       "vårløk"],
      "Vårløk. Ingen annen saus.", "Highball / bro til det røde", "De løfter lokket: ingen kjerne.", ""),
-    ("16:35", "IV", "Trollkongens måltid", "kjøtt, saus, purè, terninger", "–",
+    ("16:35", "IV", "Doriske reinloin'er", "kjøtt, saus, purè, terninger", "–",
      ["Varm tallerken", "sveip purè", "3 skiver (8 mm)", "3 sellerirot-terninger", "sopp", "SAUS", "3 tyttebær",
       "timian"],
      "Sausen", "Gammel Bordeaux", "Saus fra liten mugge (valgfritt)", ""),
@@ -439,7 +439,7 @@ FIRE = [
      [("Fyll", "≥ 75 °C"), ("Tortilla", "10–15 s per side")], ["Tørr panne. Bakepapir i holderne."], [], []),
     ("17:50", "Bjørnene ut", "VII",
      [("Solbær", "10–15 g / tallerken")], ["Kalde tallerkener. Bjørn på med paletten."], [], []),
-    ("18:15", "Ekstranummer: Caipirinha", None, [], ["Romkameraten tar den. Du er ferdig. Skål!"], [], []),
+    ("18:15", "Ekstranummer: Journey juice", None, [], ["Romkameraten tar den. Du er ferdig. Skål!"], [], []),
 ]
 
 
@@ -469,7 +469,7 @@ def render_prep(t, idx, total, nxt, kind="prep"):
     if obs:
         p.y += 6
         p.warn(obs)
-    p.foot(nxt, f"Folkemat og fanteri · {DAYS[day][0].lower()} · start {at}")
+    p.foot(nxt, f"Rampemat for rampegutar · {DAYS[day][0].lower()} · start {at}")
     return p.png()
 
 
@@ -489,7 +489,7 @@ def render_serve(s, nxt):
         p.text(table, F(26, "b"))
     if obs:
         p.warn([obs])
-    p.foot(nxt, f"Folkemat og fanteri · rett {num} av VII")
+    p.foot(nxt, f"Rampemat for rampegutar · rett {num} av VII")
     return p.png()
 
 
@@ -510,7 +510,7 @@ def render_note(title, small, sections):
             p.steps(data, numbered=False)
         elif kind == "OBS":
             p.warn(data)
-    p.foot(None, "Folkemat og fanteri · søndag 22. november 2026")
+    p.foot(None, "Rampemat for rampegutar · søndag 22. november 2026")
     return p.png()
 
 
