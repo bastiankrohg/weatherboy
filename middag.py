@@ -4,7 +4,8 @@ Billettene er ferdige bilder i middag/billettar/ (lages av middag/lag.py), og mi
 hver av dem skal ut: 8 minutter før oppgaven starter. Alt går gjennom printq.print_or_queue(), så en
 skriver som er av, opptatt eller tom for papir bare legger billetten i køen. Ingenting forsvinner.
 
-Kjører av seg selv i web.start() når serveren har en skriver (slå av med WEATHERBOY_MIDDAG=0).
+Kjøres fra én maskin: `uv run middag.py run --printer <ip>`. web.start() starter den bare hvis
+WEATHERBOY_MIDDAG=1 står i .env, så to maskiner aldri skriver ut de samme billettene.
 
     uv run middag.py plan                    hva som skrives ut når, og hva som er sendt
     uv run middag.py test --printer <ip>     testpakken nå: menyen, lappene og rettkortene
@@ -115,8 +116,8 @@ def run(printer_ip, every=20):
 
 
 def start(printer_ip):
-    """Fra web.start(): tidsplanen i en egen tråd, med mindre WEATHERBOY_MIDDAG=0 eller middagen er over."""
-    if os.environ.get("WEATHERBOY_MIDDAG", "1") == "0" or datetime.now() >= END or not PLAN.exists():
+    """Fra web.start(): tidsplanen i en egen tråd, bare med WEATHERBOY_MIDDAG=1 og før middagen er over."""
+    if os.environ.get("WEATHERBOY_MIDDAG", "0") != "1" or datetime.now() >= END or not PLAN.exists():
         return None
     t = threading.Thread(target=run, args=(printer_ip,), daemon=True)
     t.start()

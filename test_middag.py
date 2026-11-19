@@ -54,7 +54,11 @@ printed.clear()
 middag.tick(None, datetime(2026, 11, 22, 16, 57))
 assert "Middag · 17:05 SERVER V" in [l for l, _ in printed]
 
-# after the dinner, the scheduler doesn't start at all
+# web.start() only starts it where WEATHERBOY_MIDDAG=1, and not after the dinner
+import os
+os.environ.pop("WEATHERBOY_MIDDAG", None)
+assert middag.start(None) is None
+os.environ["WEATHERBOY_MIDDAG"] = "1"
 saved = middag.END
 middag.END = datetime(2000, 1, 1)
 assert middag.start(None) is None
