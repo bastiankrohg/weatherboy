@@ -986,6 +986,11 @@ def start(port=PORT, printer_ip=None, tunnel_name=None):
     if printer_ip:
         threading.Thread(target=daily.run, args=(daily_job,), daemon=True).start()
         threading.Thread(target=printq.drain, args=(PRINTER,), daemon=True).start()
+        try:  # Folkemat og fanteri 22.11.2026: kjøkkenbillettene i tide (middag.py); stopper av seg selv etterpå
+            import middag
+            middag.start(PRINTER)
+        except Exception as ex:
+            print(f"middag: startet ikke: {ex}")
     if tunnel_name:
         tunnel(tunnel_name)
     if issues.enabled():

@@ -1,0 +1,561 @@
+{
+ "lead_min": 8,
+ "test": [
+  {
+   "id": "00-meny",
+   "label": "Meny (mat + drikke)",
+   "png": "billettar/00-meny.png",
+   "group": "test"
+  },
+  {
+   "id": "01-allergi",
+   "label": "Allergilapp",
+   "png": "billettar/01-allergi.png",
+   "group": "test"
+  },
+  {
+   "id": "02-temp",
+   "label": "Temperaturer og tider",
+   "png": "billettar/02-temp.png",
+   "group": "test"
+  },
+  {
+   "id": "03-fredag",
+   "label": "Fredag",
+   "png": "billettar/03-fredag.png",
+   "group": "test"
+  },
+  {
+   "id": "04-handleliste",
+   "label": "Handleliste",
+   "png": "billettar/04-handleliste.png",
+   "group": "test"
+  },
+  {
+   "id": "05-dagsplan-lor",
+   "label": "Dagsplan lørdag",
+   "png": "billettar/05-dagsplan-lor.png",
+   "group": "test"
+  },
+  {
+   "id": "06-dagsplan-son",
+   "label": "Dagsplan søndag",
+   "png": "billettar/06-dagsplan-son.png",
+   "group": "test"
+  },
+  {
+   "id": "07-klar-lordag",
+   "label": "Lørdagskveld-sjekkliste",
+   "png": "billettar/07-klar-lordag.png",
+   "group": "test"
+  },
+  {
+   "id": "10-kort-I",
+   "label": "Rettkort I",
+   "png": "billettar/10-kort-I.png",
+   "group": "test"
+  },
+  {
+   "id": "11-kort-II",
+   "label": "Rettkort II",
+   "png": "billettar/11-kort-II.png",
+   "group": "test"
+  },
+  {
+   "id": "12-kort-III",
+   "label": "Rettkort III",
+   "png": "billettar/12-kort-III.png",
+   "group": "test"
+  },
+  {
+   "id": "13-kort-IV",
+   "label": "Rettkort IV",
+   "png": "billettar/13-kort-IV.png",
+   "group": "test"
+  },
+  {
+   "id": "14-kort-V",
+   "label": "Rettkort V",
+   "png": "billettar/14-kort-V.png",
+   "group": "test"
+  },
+  {
+   "id": "15-kort-VI",
+   "label": "Rettkort VI",
+   "png": "billettar/15-kort-VI.png",
+   "group": "test"
+  },
+  {
+   "id": "16-kort-VII",
+   "label": "Rettkort VII",
+   "png": "billettar/16-kort-VII.png",
+   "group": "test"
+  }
+ ],
+ "plan": [
+  {
+   "id": "lor-0800-mise",
+   "label": "08:00 Rengjøring + etikettsjekk",
+   "png": "billettar/lor-0800-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T08:00",
+   "print_at": "2026-11-21T07:52"
+  },
+  {
+   "id": "lor-0845-mise",
+   "label": "08:45 Panna cotta: kok og hell",
+   "png": "billettar/lor-0845-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T08:45",
+   "print_at": "2026-11-21T08:37"
+  },
+  {
+   "id": "lor-0915-mise",
+   "label": "09:15 Løk i ovnen",
+   "png": "billettar/lor-0915-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T09:15",
+   "print_at": "2026-11-21T09:07"
+  },
+  {
+   "id": "lor-0920-mise",
+   "label": "09:20 Soppkraft i trykkokeren",
+   "png": "billettar/lor-0920-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T09:20",
+   "print_at": "2026-11-21T09:12"
+  },
+  {
+   "id": "lor-0930-mise",
+   "label": "09:30 Sylteloke + syltede grønnsaker",
+   "png": "billettar/lor-0930-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T09:30",
+   "print_at": "2026-11-21T09:22"
+  },
+  {
+   "id": "lor-1000-mise",
+   "label": "10:00 Bærreduksjoner",
+   "png": "billettar/lor-1000-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T10:00",
+   "print_at": "2026-11-21T09:52"
+  },
+  {
+   "id": "lor-1020-mise",
+   "label": "10:20 Løk ut · sil kraften",
+   "png": "billettar/lor-1020-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T10:20",
+   "print_at": "2026-11-21T10:12"
+  },
+  {
+   "id": "lor-1040-mise",
+   "label": "10:40 Fiskekraft (eget utstyr)",
+   "png": "billettar/lor-1040-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T10:40",
+   "print_at": "2026-11-21T10:32"
+  },
+  {
+   "id": "lor-1100-mise",
+   "label": "11:00 Kjøtt: trim + marinadetest",
+   "png": "billettar/lor-1100-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T11:00",
+   "print_at": "2026-11-21T10:52"
+  },
+  {
+   "id": "lor-1120-mise",
+   "label": "11:20 Viltsaus",
+   "png": "billettar/lor-1120-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T11:20",
+   "print_at": "2026-11-21T11:12"
+  },
+  {
+   "id": "lor-1135-mise",
+   "label": "11:35 Stek testbit 1 (30 min)",
+   "png": "billettar/lor-1135-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T11:35",
+   "print_at": "2026-11-21T11:27"
+  },
+  {
+   "id": "lor-1205-mise",
+   "label": "12:05 Stek testbit 2 (60 min)",
+   "png": "billettar/lor-1205-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T12:05",
+   "print_at": "2026-11-21T11:57"
+  },
+  {
+   "id": "lor-1210-mise",
+   "label": "12:10 Reduser viltsausen",
+   "png": "billettar/lor-1210-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T12:10",
+   "print_at": "2026-11-21T12:02"
+  },
+  {
+   "id": "lor-1230-mise",
+   "label": "12:30 LUNSJ. Sett deg ned.",
+   "png": "billettar/lor-1230-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T12:30",
+   "print_at": "2026-11-21T12:22"
+  },
+  {
+   "id": "lor-1300-mise",
+   "label": "13:00 Løkene: hul ut + duxelles + fyll",
+   "png": "billettar/lor-1300-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T13:00",
+   "print_at": "2026-11-21T12:52"
+  },
+  {
+   "id": "lor-1400-mise",
+   "label": "14:00 Sellerirot: purè + terninger",
+   "png": "billettar/lor-1400-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T14:00",
+   "print_at": "2026-11-21T13:52"
+  },
+  {
+   "id": "lor-1430-mise",
+   "label": "14:30 Svidd purre",
+   "png": "billettar/lor-1430-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T14:30",
+   "print_at": "2026-11-21T14:22"
+  },
+  {
+   "id": "lor-1450-mise",
+   "label": "14:50 Dillolje",
+   "png": "billettar/lor-1450-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T14:50",
+   "print_at": "2026-11-21T14:42"
+  },
+  {
+   "id": "lor-1515-mise",
+   "label": "15:15 Skog-XO + skogsjord",
+   "png": "billettar/lor-1515-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T15:15",
+   "print_at": "2026-11-21T15:07"
+  },
+  {
+   "id": "lor-1600-mise",
+   "label": "16:00 Kaffe · sjekk panna cottaen",
+   "png": "billettar/lor-1600-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T16:00",
+   "print_at": "2026-11-21T15:52"
+  },
+  {
+   "id": "lor-1615-mise",
+   "label": "16:15 Blini: tørrblanding + testbatch",
+   "png": "billettar/lor-1615-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T16:15",
+   "print_at": "2026-11-21T16:07"
+  },
+  {
+   "id": "lor-1645-mise",
+   "label": "16:45 Tacofyll + masatest",
+   "png": "billettar/lor-1645-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T16:45",
+   "print_at": "2026-11-21T16:37"
+  },
+  {
+   "id": "lor-1720-mise",
+   "label": "17:20 Testfrityr sopp + sprø sjalott",
+   "png": "billettar/lor-1720-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T17:20",
+   "print_at": "2026-11-21T17:12"
+  },
+  {
+   "id": "lor-1750-mise",
+   "label": "17:50 Sjokoladeflak",
+   "png": "billettar/lor-1750-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T17:50",
+   "print_at": "2026-11-21T17:42"
+  },
+  {
+   "id": "lor-1800-mise",
+   "label": "18:00 PLA-formtest på ramekinen",
+   "png": "billettar/lor-1800-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T18:00",
+   "print_at": "2026-11-21T17:52"
+  },
+  {
+   "id": "lor-1815-mise",
+   "label": "18:15 Rydd, merk, sjekk",
+   "png": "billettar/lor-1815-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T18:15",
+   "print_at": "2026-11-21T18:07"
+  },
+  {
+   "id": "lor-1900-mise",
+   "label": "19:00 Dekk fram utstyr. Ferdig for i dag.",
+   "png": "billettar/lor-1900-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T19:00",
+   "print_at": "2026-11-21T18:52"
+  },
+  {
+   "id": "son-0830-mise",
+   "label": "08:30 Oppsett: ett brett per rett",
+   "png": "billettar/son-0830-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T08:30",
+   "print_at": "2026-11-22T08:22"
+  },
+  {
+   "id": "son-0852-mise",
+   "label": "08:52 Stikk ut bjørnene",
+   "png": "billettar/son-0852-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T08:52",
+   "print_at": "2026-11-22T08:44"
+  },
+  {
+   "id": "son-0930-mise",
+   "label": "09:30 Tortilladeig",
+   "png": "billettar/son-0930-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T09:30",
+   "print_at": "2026-11-22T09:22"
+  },
+  {
+   "id": "son-1000-mise",
+   "label": "10:00 Sopp: riv klaser",
+   "png": "billettar/son-1000-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T10:00",
+   "print_at": "2026-11-22T09:52"
+  },
+  {
+   "id": "son-1030-mise",
+   "label": "10:30 Blini: vei opp vått",
+   "png": "billettar/son-1030-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T10:30",
+   "print_at": "2026-11-22T10:22"
+  },
+  {
+   "id": "son-1100-mise",
+   "label": "11:00 Torsk: porsjonér",
+   "png": "billettar/son-1100-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T11:00",
+   "print_at": "2026-11-22T10:52"
+  },
+  {
+   "id": "son-1130-mise",
+   "label": "11:30 Fenikel + maitake",
+   "png": "billettar/son-1130-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T11:30",
+   "print_at": "2026-11-22T11:22"
+  },
+  {
+   "id": "son-1200-mise",
+   "label": "12:00 Lunsj (liten!)",
+   "png": "billettar/son-1200-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T12:00",
+   "print_at": "2026-11-22T11:52"
+  },
+  {
+   "id": "son-1245-mise",
+   "label": "12:45 Smak til saus og kraft",
+   "png": "billettar/son-1245-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T12:45",
+   "print_at": "2026-11-22T12:37"
+  },
+  {
+   "id": "son-1330-mise",
+   "label": "13:30 Ut av kjøleskapet",
+   "png": "billettar/son-1330-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T13:30",
+   "print_at": "2026-11-22T13:22"
+  },
+  {
+   "id": "son-1400-mise",
+   "label": "14:00 Press og stek tortillas · agurk",
+   "png": "billettar/son-1400-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T14:00",
+   "print_at": "2026-11-22T13:52"
+  },
+  {
+   "id": "son-1430-mise",
+   "label": "14:30 Rydd · klargjør",
+   "png": "billettar/son-1430-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T14:30",
+   "print_at": "2026-11-22T14:22"
+  },
+  {
+   "id": "son-1445-mise",
+   "label": "14:45 Serveringsoppsett",
+   "png": "billettar/son-1445-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T14:45",
+   "print_at": "2026-11-22T14:37"
+  },
+  {
+   "id": "son-1510-mise",
+   "label": "15:10 Ovn + sous vide på",
+   "png": "billettar/son-1510-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T15:10",
+   "print_at": "2026-11-22T15:02"
+  },
+  {
+   "id": "son-1515-mise",
+   "label": "15:15 Blinirøre + kjøtt i marinade",
+   "png": "billettar/son-1515-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T15:15",
+   "print_at": "2026-11-22T15:07"
+  },
+  {
+   "id": "son-1530-server-I",
+   "label": "15:30 SERVER I",
+   "png": "billettar/son-1530-server-I.png",
+   "group": "søn",
+   "start": "2026-11-22T15:30",
+   "print_at": "2026-11-22T15:22"
+  },
+  {
+   "id": "son-1535-fyr",
+   "label": "15:35 Frityr sopp · varmeskap",
+   "png": "billettar/son-1535-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T15:35",
+   "print_at": "2026-11-22T15:27"
+  },
+  {
+   "id": "son-1545-server-II",
+   "label": "15:45 SERVER II",
+   "png": "billettar/son-1545-server-II.png",
+   "group": "søn",
+   "start": "2026-11-22T15:45",
+   "print_at": "2026-11-22T15:37"
+  },
+  {
+   "id": "son-1555-fyr",
+   "label": "15:55 Glaser løk · purè",
+   "png": "billettar/son-1555-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T15:55",
+   "print_at": "2026-11-22T15:47"
+  },
+  {
+   "id": "son-1605-server-III",
+   "label": "16:05 SERVER III",
+   "png": "billettar/son-1605-server-III.png",
+   "group": "søn",
+   "start": "2026-11-22T16:05",
+   "print_at": "2026-11-22T15:57"
+  },
+  {
+   "id": "son-1605-fyr",
+   "label": "16:05 Kjøtt: stek → ovn",
+   "png": "billettar/son-1605-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T16:05",
+   "print_at": "2026-11-22T15:57"
+  },
+  {
+   "id": "son-1625-fyr",
+   "label": "16:25 Kjøtt ut · hvil · skåler inn",
+   "png": "billettar/son-1625-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T16:25",
+   "print_at": "2026-11-22T16:17"
+  },
+  {
+   "id": "son-1635-server-IV",
+   "label": "16:35 SERVER IV",
+   "png": "billettar/son-1635-server-IV.png",
+   "group": "søn",
+   "start": "2026-11-22T16:35",
+   "print_at": "2026-11-22T16:27"
+  },
+  {
+   "id": "son-1640-fyr",
+   "label": "16:40 Torsk i badet · kraft på",
+   "png": "billettar/son-1640-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T16:40",
+   "print_at": "2026-11-22T16:32"
+  },
+  {
+   "id": "son-1655-fyr",
+   "label": "16:55 Kraft på kanna",
+   "png": "billettar/son-1655-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T16:55",
+   "print_at": "2026-11-22T16:47"
+  },
+  {
+   "id": "son-1705-server-V",
+   "label": "17:05 SERVER V",
+   "png": "billettar/son-1705-server-V.png",
+   "group": "søn",
+   "start": "2026-11-22T17:05",
+   "print_at": "2026-11-22T16:57"
+  },
+  {
+   "id": "son-1720-fyr",
+   "label": "17:20 Taco: varm opp",
+   "png": "billettar/son-1720-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T17:20",
+   "print_at": "2026-11-22T17:12"
+  },
+  {
+   "id": "son-1730-server-VI",
+   "label": "17:30 SERVER VI",
+   "png": "billettar/son-1730-server-VI.png",
+   "group": "søn",
+   "start": "2026-11-22T17:30",
+   "print_at": "2026-11-22T17:22"
+  },
+  {
+   "id": "son-1750-fyr",
+   "label": "17:50 Bjørnene ut",
+   "png": "billettar/son-1750-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T17:50",
+   "print_at": "2026-11-22T17:42"
+  },
+  {
+   "id": "son-1755-server-VII",
+   "label": "17:55 SERVER VII",
+   "png": "billettar/son-1755-server-VII.png",
+   "group": "søn",
+   "start": "2026-11-22T17:55",
+   "print_at": "2026-11-22T17:47"
+  },
+  {
+   "id": "son-1815-fyr",
+   "label": "18:15 Ekstranummer: Caipirinha",
+   "png": "billettar/son-1815-fyr.png",
+   "group": "søn",
+   "start": "2026-11-22T18:15",
+   "print_at": "2026-11-22T18:07"
+  }
+ ]
+}
