@@ -46,7 +46,7 @@ assert len(printed) == 1
 # a server that comes back at 10:33 prints what's still current, skips what's long gone
 middag.tick(None, datetime(2026, 11, 21, 10, 33))
 labels = [l for l, _ in printed[1:]]
-assert "Middag · 10:20 Løk ut · sil kraften" in labels and "Middag · 10:40 Fiskekraft (eget utstyr)" in labels
+assert "Middag · 10:20 Løk ut · sil kraften" in labels and "Middag · 10:40 Dashi: etikett + smakstest" in labels
 assert "Middag · 08:45 Panna cotta: kok og hell" not in labels
 
 # Sunday: the service tickets come 8 minutes early

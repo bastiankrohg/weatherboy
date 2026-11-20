@@ -151,7 +151,7 @@
   },
   {
    "id": "lor-1040-mise",
-   "label": "10:40 Fiskekraft (eget utstyr)",
+   "label": "10:40 Dashi: etikett + smakstest",
    "png": "billettar/lor-1040-mise.png",
    "group": "lør",
    "start": "2026-11-21T10:40",
@@ -231,7 +231,7 @@
   },
   {
    "id": "lor-1450-mise",
-   "label": "14:50 Dillolje",
+   "label": "14:50 Grønn urteolje",
    "png": "billettar/lor-1450-mise.png",
    "group": "lør",
    "start": "2026-11-21T14:50",
@@ -247,67 +247,75 @@
   },
   {
    "id": "lor-1600-mise",
-   "label": "16:00 Kaffe · sjekk panna cottaen",
+   "label": "16:00 Skumbaser: sopp + løk",
    "png": "billettar/lor-1600-mise.png",
    "group": "lør",
    "start": "2026-11-21T16:00",
    "print_at": "2026-11-21T15:52"
   },
   {
-   "id": "lor-1615-mise",
-   "label": "16:15 Blini: tørrblanding + testbatch",
-   "png": "billettar/lor-1615-mise.png",
+   "id": "lor-1630-mise",
+   "label": "16:30 Blini: tørrblanding + testbatch",
+   "png": "billettar/lor-1630-mise.png",
    "group": "lør",
-   "start": "2026-11-21T16:15",
-   "print_at": "2026-11-21T16:07"
+   "start": "2026-11-21T16:30",
+   "print_at": "2026-11-21T16:22"
   },
   {
-   "id": "lor-1645-mise",
-   "label": "16:45 Tacofyll + masatest",
-   "png": "billettar/lor-1645-mise.png",
+   "id": "lor-1700-mise",
+   "label": "17:00 Tacofyll + masatest",
+   "png": "billettar/lor-1700-mise.png",
    "group": "lør",
-   "start": "2026-11-21T16:45",
-   "print_at": "2026-11-21T16:37"
+   "start": "2026-11-21T17:00",
+   "print_at": "2026-11-21T16:52"
   },
   {
-   "id": "lor-1720-mise",
-   "label": "17:20 Testfrityr sopp + sprø sjalott",
-   "png": "billettar/lor-1720-mise.png",
+   "id": "lor-1735-mise",
+   "label": "17:35 Testfrityr sopp + sprø sjalott",
+   "png": "billettar/lor-1735-mise.png",
    "group": "lør",
-   "start": "2026-11-21T17:20",
-   "print_at": "2026-11-21T17:12"
+   "start": "2026-11-21T17:35",
+   "print_at": "2026-11-21T17:27"
   },
   {
-   "id": "lor-1750-mise",
-   "label": "17:50 Sjokoladeflak",
-   "png": "billettar/lor-1750-mise.png",
+   "id": "lor-1805-mise",
+   "label": "18:05 Nøkken: innpakningstest",
+   "png": "billettar/lor-1805-mise.png",
    "group": "lør",
-   "start": "2026-11-21T17:50",
-   "print_at": "2026-11-21T17:42"
+   "start": "2026-11-21T18:05",
+   "print_at": "2026-11-21T17:57"
   },
   {
-   "id": "lor-1800-mise",
-   "label": "18:00 PLA-formtest på ramekinen",
-   "png": "billettar/lor-1800-mise.png",
+   "id": "lor-1835-mise",
+   "label": "18:35 Sjokoladeflak",
+   "png": "billettar/lor-1835-mise.png",
    "group": "lør",
-   "start": "2026-11-21T18:00",
-   "print_at": "2026-11-21T17:52"
+   "start": "2026-11-21T18:35",
+   "print_at": "2026-11-21T18:27"
   },
   {
-   "id": "lor-1815-mise",
-   "label": "18:15 Rydd, merk, sjekk",
-   "png": "billettar/lor-1815-mise.png",
+   "id": "lor-1845-mise",
+   "label": "18:45 PLA-formtest på ramekinen",
+   "png": "billettar/lor-1845-mise.png",
    "group": "lør",
-   "start": "2026-11-21T18:15",
-   "print_at": "2026-11-21T18:07"
+   "start": "2026-11-21T18:45",
+   "print_at": "2026-11-21T18:37"
   },
   {
-   "id": "lor-1900-mise",
-   "label": "19:00 Dekk fram utstyr. Ferdig for i dag.",
-   "png": "billettar/lor-1900-mise.png",
+   "id": "lor-1855-mise",
+   "label": "18:55 Rydd, merk, sjekk",
+   "png": "billettar/lor-1855-mise.png",
    "group": "lør",
-   "start": "2026-11-21T19:00",
-   "print_at": "2026-11-21T18:52"
+   "start": "2026-11-21T18:55",
+   "print_at": "2026-11-21T18:47"
+  },
+  {
+   "id": "lor-1940-mise",
+   "label": "19:40 Dekk fram utstyr. Ferdig for i dag.",
+   "png": "billettar/lor-1940-mise.png",
+   "group": "lør",
+   "start": "2026-11-21T19:40",
+   "print_at": "2026-11-21T19:32"
   },
   {
    "id": "son-0830-mise",
@@ -359,7 +367,7 @@
   },
   {
    "id": "son-1130-mise",
-   "label": "11:30 Fenikel + maitake",
+   "label": "11:30 Squashbånd + maitake",
    "png": "billettar/son-1130-mise.png",
    "group": "søn",
    "start": "2026-11-22T11:30",
@@ -375,7 +383,7 @@
   },
   {
    "id": "son-1245-mise",
-   "label": "12:45 Smak til saus og kraft",
+   "label": "12:45 Dashi + smak til viltsaus",
    "png": "billettar/son-1245-mise.png",
    "group": "søn",
    "start": "2026-11-22T12:45",
@@ -391,7 +399,7 @@
   },
   {
    "id": "son-1400-mise",
-   "label": "14:00 Press og stek tortillas · agurk",
+   "label": "14:00 Tortillas · squashmatter",
    "png": "billettar/son-1400-mise.png",
    "group": "søn",
    "start": "2026-11-22T14:00",
@@ -423,7 +431,7 @@
   },
   {
    "id": "son-1515-mise",
-   "label": "15:15 Blinirøre + kjøtt i marinade",
+   "label": "15:15 Blinirøre · kjøtt i marinade · skum",
    "png": "billettar/son-1515-mise.png",
    "group": "søn",
    "start": "2026-11-22T15:15",
@@ -495,7 +503,7 @@
   },
   {
    "id": "son-1640-fyr",
-   "label": "16:40 Torsk i badet · kraft på",
+   "label": "16:40 Torsk i badet · eple",
    "png": "billettar/son-1640-fyr.png",
    "group": "søn",
    "start": "2026-11-22T16:40",
@@ -503,7 +511,7 @@
   },
   {
    "id": "son-1655-fyr",
-   "label": "16:55 Kraft på kanna",
+   "label": "16:55 Pakk inn torsken · dashi på kanna",
    "png": "billettar/son-1655-fyr.png",
    "group": "søn",
    "start": "2026-11-22T16:55",
