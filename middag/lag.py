@@ -378,13 +378,13 @@ PREP = [
 
 # servering: (start, rett-tall, navn, varmt, kaldt, tallerken [...], sist, drikke, ved bordet, obs)
 SERVE = [
-    ("15:30", "I", "Pannekaka som stakk av", "blini (lune)", "rogn, dillkrem",
+    ("15:30", "I", "Pannekaka", "blini (lune)", "rogn, dillkrem",
      ["Liten kald tallerken", "2 blini", "dillkrem", "rogn", "dilltupp", "2–3 nigellafrø", "sitronskall"],
      "Rogn + dill i siste liten", "Highball", "", "Rognfri blini til egg-gjesten hvis det ikke er avklart."),
     ("15:45", "II", "Stabb-marsj", "sprø sopp", "syltede grønnsaker",
      ["Mørk tallerken", "prikk skog-XO", "soppklase", "syltede biter lent mot", "skogsjord", "timian"],
      "Skogsjord (den mykner)", "Highball", "", ""),
-    ("16:05", "III", "Peer Gynt – Løken utan kjerne", "løk, purre", "–",
+    ("16:05", "III", "Peer Gynt", "løk, purre", "–",
      ["Varm liten tallerken", "løk midt", "lokket lent mot", "1 purreskive", "sprø sjalott på fyllet",
       "vårløk"],
      "Vårløk. Ingen annen saus.", "Highball / bro til det røde", "De løfter lokket: ingen kjerne.", ""),
@@ -399,7 +399,7 @@ SERVE = [
     ("17:30", "VI", "Egil", "tortilla, fyll ≥ 75 °C", "syltet rødløk",
      ["Bakepapir i holderen", "varm tortilla", "10–12 g fyll", "3 løkstrimler", "1 blad", "lime ved siden"],
      "Bladet", "Rest av hvitvinen / Voulez-vous", "Del ut holderne. Ikke forklar navnet.", ""),
-    ("17:55", "VII", "Kvitebjørn kong Valemon", "–", "alt",
+    ("17:55", "VII", "Kong Valemon", "–", "alt",
      ["Kald mørk tallerken", "bjørn (palett, papir ut)", "solbær 10–15 g VED SIDEN", "sjokoladeflak lent mot"],
      "Sjokoladeflaket", "«Voulez-vous»", "", ""),
 ]
