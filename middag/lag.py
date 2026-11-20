@@ -469,7 +469,7 @@ def render_prep(t, idx, total, nxt, kind="prep"):
     if obs:
         p.y += 6
         p.warn(obs)
-    p.foot(nxt, f"Rampemat for rampegutar · {DAYS[day][0].lower()} · start {at}")
+    p.foot(nxt, f"Rampemat for guttestubbgnagare · {DAYS[day][0].lower()} · start {at}")
     return p.png()
 
 
@@ -489,7 +489,7 @@ def render_serve(s, nxt):
         p.text(table, F(26, "b"))
     if obs:
         p.warn([obs])
-    p.foot(nxt, f"Rampemat for rampegutar · rett {num} av VII")
+    p.foot(nxt, f"Rampemat for guttestubbgnagare · rett {num} av VII")
     return p.png()
 
 
@@ -510,7 +510,7 @@ def render_note(title, small, sections):
             p.steps(data, numbered=False)
         elif kind == "OBS":
             p.warn(data)
-    p.foot(None, "Rampemat for rampegutar · søndag 22. november 2026")
+    p.foot(None, "Rampemat for guttestubbgnagare · søndag 22. november 2026")
     return p.png()
 
 
