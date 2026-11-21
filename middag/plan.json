@@ -50,6 +50,12 @@
    "group": "test"
   },
   {
+   "id": "08-resten",
+   "label": "Handle resten (lørdag)",
+   "png": "billettar/08-resten.png",
+   "group": "test"
+  },
+  {
    "id": "10-kort-I",
    "label": "Rettkort I",
    "png": "billettar/10-kort-I.png",
@@ -263,7 +269,7 @@
   },
   {
    "id": "lor-1700-mise",
-   "label": "17:00 Tacofyll + masatest",
+   "label": "17:00 Al pastor i marinade + masatest",
    "png": "billettar/lor-1700-mise.png",
    "group": "lør",
    "start": "2026-11-21T17:00",
@@ -279,7 +285,7 @@
   },
   {
    "id": "lor-1805-mise",
-   "label": "18:05 Nøkken: innpakningstest",
+   "label": "18:05 Nøkken: rulletest med breiflabb",
    "png": "billettar/lor-1805-mise.png",
    "group": "lør",
    "start": "2026-11-21T18:05",
@@ -359,7 +365,7 @@
   },
   {
    "id": "son-1100-mise",
-   "label": "11:00 Torsk: porsjonér",
+   "label": "11:00 Kveite: porsjonér",
    "png": "billettar/son-1100-mise.png",
    "group": "søn",
    "start": "2026-11-22T11:00",
@@ -390,6 +396,14 @@
    "print_at": "2026-11-22T12:37"
   },
   {
+   "id": "son-1300-mise",
+   "label": "13:00 Stek al pastor · druer i sifongen",
+   "png": "billettar/son-1300-mise.png",
+   "group": "søn",
+   "start": "2026-11-22T13:00",
+   "print_at": "2026-11-22T12:52"
+  },
+  {
    "id": "son-1330-mise",
    "label": "13:30 Ut av kjøleskapet",
    "png": "billettar/son-1330-mise.png",
@@ -399,7 +413,7 @@
   },
   {
    "id": "son-1400-mise",
-   "label": "14:00 Tortillas · squashmatter",
+   "label": "14:00 Tortillas · kveiteruller",
    "png": "billettar/son-1400-mise.png",
    "group": "søn",
    "start": "2026-11-22T14:00",
@@ -503,7 +517,7 @@
   },
   {
    "id": "son-1640-fyr",
-   "label": "16:40 Torsk i badet · eple",
+   "label": "16:40 Kveiteruller i badet · eple",
    "png": "billettar/son-1640-fyr.png",
    "group": "søn",
    "start": "2026-11-22T16:40",
@@ -511,7 +525,7 @@
   },
   {
    "id": "son-1655-fyr",
-   "label": "16:55 Pakk inn torsken · dashi på kanna",
+   "label": "16:55 Dashi på kanna · skåler",
    "png": "billettar/son-1655-fyr.png",
    "group": "søn",
    "start": "2026-11-22T16:55",
@@ -527,7 +541,7 @@
   },
   {
    "id": "son-1720-fyr",
-   "label": "17:20 Taco: varm opp",
+   "label": "17:20 Taco: al pastor + tortilla",
    "png": "billettar/son-1720-fyr.png",
    "group": "søn",
    "start": "2026-11-22T17:20",
@@ -543,7 +557,7 @@
   },
   {
    "id": "son-1750-fyr",
-   "label": "17:50 Bjørnene ut",
+   "label": "17:50 Bjørnene ut · druene",
    "png": "billettar/son-1750-fyr.png",
    "group": "søn",
    "start": "2026-11-22T17:50",
